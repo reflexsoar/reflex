@@ -9,6 +9,12 @@ done
 echo $uninstall
 echo $help
 
+if $help; then
+    echo ''
+    echo '-u uninstall | Uninstalls reflex'
+    echo '-h help | Shows help documentation'
+    exit
+
 cleanup=${environment:-cleanup}
 if [ "$EUID" -ne 0 ]
   then echo "Please run with sudo"
