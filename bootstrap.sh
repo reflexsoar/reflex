@@ -69,13 +69,14 @@ if [ ! -z "$install" ]; then
         apt install -y python3-pip git
     fi
     pip3 install pipenv
-    mkdir -p /opt/reflex/reflex-api/instance
+    mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
     rm -rf /opt/reflex/reflex-api/migrations
     useradd reflex -m -s /bin/bash
     export FLASK_CONFIG="production"
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
+    mkdir -p /opt/reflex/reflex-api/instance
     echo "MASTER_PASSWORD=$MASTER_PASSWORD" > /opt/reflex/reflex-api/instance/application.conf
     echo "SECRET_KEY=$SECRET_KEY" >> /opt/reflex/reflex-api/instance/application.conf
     echo "SECURITY_PASSWORD_SALT=$SECURITY_PASSWORD_SALT" >> /opt/reflex/reflex-api/instance/application.conf
