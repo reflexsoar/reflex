@@ -1,4 +1,8 @@
 #!/bin/bash
+if [ "$EUID" -ne 0 ]
+  then echo "Please run with sudo"
+  exit
+fi
 os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
 if [[ "$os_version" == "CentOS"* ]]; then
   os="centos"
