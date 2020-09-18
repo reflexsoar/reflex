@@ -72,8 +72,8 @@ if [ -z "$install" ]; then
     useradd reflex -m -s /bin/bash 
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
-    export PIPENV_PIPFILE=/opt/reflex/reflex-api/Pipfile
     #sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
+    chmod +x database_initialization.sh
     sudo -u reflex bash -c "./database_initialization.sh"
 fi
 cd $starting_directory
