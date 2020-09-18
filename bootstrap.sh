@@ -8,7 +8,7 @@ do
     esac
 done
 
-if [ "$uninstall" -eq "true" ] && [ "$install" -eq "true" ]; then
+if [ -z "$uninstall" ] && [ -z "$install" ]; then
     echo "You cannot use -i and -u at the same time"
     exit
 fi
