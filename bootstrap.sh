@@ -29,6 +29,7 @@ if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
     echo "This script is only supported on centos and ubuntu"
     exit
 fi
+starting_directory=$PWD
 
 if [ ! -z "$uninstall" ]; then
     echo "Uninstalling reflex"
@@ -71,9 +72,11 @@ if [ -z "$install" ]; then
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
     export PIPENV_PIPFILE=/opt/reflex/reflex-api/Pipfile
+    cd /opt/reflex/reflex-api
     sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv install --dev
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex (cd /opt/reflex/reflex-api; pipenv run python /opt/reflex/reflex-api/manage.py db init)
-    #sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db migrate
-    #sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db upgrade
-    #sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py setup
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db init
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db migrate
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db upgrade
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py setup
 fi
+cd $starting_directory
