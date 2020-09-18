@@ -75,6 +75,7 @@ if [ ! -z "$install" ]; then
     rm -rf /opt/reflex/reflex-api/migrations
     useradd reflex -m -s /bin/bash
     export FLASK_CONFIG="production"
+    chown -R reflex:reflex /opt/reflex
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
     mkdir -p /opt/reflex/reflex-api/instance
     echo "MASTER_PASSWORD=$MASTER_PASSWORD" > /opt/reflex/reflex-api/instance/application.conf
