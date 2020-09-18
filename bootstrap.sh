@@ -74,6 +74,6 @@ if [ -z "$install" ]; then
     export FLASK_CONFIG="production"
     export PIPENV_PIPFILE=/opt/reflex/reflex-api/Pipfile
     cd /opt/reflex/reflex-api
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python /opt/reflex/reflex-api/manage.py db init; pipenv run python /opt/reflex/reflex-api/manage.py db migrate; pipenv run python /opt/reflex/reflex-api/manage.py db upgrade; pipenv run python /opt/reflex/reflex-api/manage.py setup"
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex bash -c "cd /opt/reflex/reflex-api; . venv/bin/activate; pipenv install --dev; pipenv run python /opt/reflex/reflex-api/manage.py db init; pipenv run python /opt/reflex/reflex-api/manage.py db migrate; pipenv run python /opt/reflex/reflex-api/manage.py db upgrade; pipenv run python /opt/reflex/reflex-api/manage.py setup"
 fi
 cd $starting_directory
