@@ -69,7 +69,7 @@ if [ -z "$install" ]; then
         apt install -y python3-pip git
     fi
     pip3 install pipenv
-    mkdir -p /opt/reflex/reflex-api
+    mkdir -p /opt/reflex/reflex-api/instance
     cd /opt/reflex/reflex-api
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
     rm -rf /opt/reflex/reflex-api/migrations
@@ -83,5 +83,21 @@ if [ -z "$install" ]; then
     chmod 400 /opt/reflex/reflex-api/instance/application.conf
     python_venv=$(sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv --venv")
     echo "Python venv is : $python_venv"
+
+    cpu_cores=echo "$(grep -c processor /proc/cpuinfo)"
+    echo "[Unit]
+Description=Gunicorn instance to server Reflex API
+After=network.target
+
+[Service]
+User=reflex
+Group=www-data
+WorkingDirectory=/opt/reflex/reflex-api
+Environment=\"PATH=$python_venv/bin\"
+ExecStart=/home/reflex/.local/share/virtualenvs/VIRTUAL_ENV_ID/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"production\")'
+
+[Install]
+WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
+
 fi
 cd $starting_directory
