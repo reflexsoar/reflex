@@ -30,7 +30,7 @@ if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
     exit
 fi
 starting_directory=$PWD
-
+echo "Install $install | Uninstall $uninstall"
 if [ ! -z "$uninstall" ]; then
     echo "Uninstalling reflex"
     echo "Removing reflex service"
