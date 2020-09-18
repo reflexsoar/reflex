@@ -78,14 +78,12 @@ if [ ! -z "$install" ]; then
     chown -R reflex:reflex /opt/reflex
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
     mkdir -p /opt/reflex/reflex-api/instance
-    echo "MASTER_PASSWORD=$MASTER_PASSWORD" > /opt/reflex/reflex-api/instance/application.conf
-    echo "SECRET_KEY=$SECRET_KEY" >> /opt/reflex/reflex-api/instance/application.conf
-    echo "SECURITY_PASSWORD_SALT=$SECURITY_PASSWORD_SALT" >> /opt/reflex/reflex-api/instance/application.conf
+    echo "MASTER_PASSWORD = '$MASTER_PASSWORD'" > /opt/reflex/reflex-api/instance/application.conf
+    echo "SECRET_KEY = '$SECRET_KEY'" >> /opt/reflex/reflex-api/instance/application.conf
+    echo "SECURITY_PASSWORD_SALT = '$SECURITY_PASSWORD_SALT'" >> /opt/reflex/reflex-api/instance/application.conf
     chown -R reflex:reflex /opt/reflex
     chmod 400 /opt/reflex/reflex-api/instance/application.conf
     python_venv=$(sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv --venv")
-    echo "Python venv is : $python_venv"
-
     cpu_cores=$(grep -c processor /proc/cpuinfo)
     echo "[Unit]
 Description=Gunicorn instance to server Reflex API
@@ -96,7 +94,7 @@ User=reflex
 Group=www-data
 WorkingDirectory=/opt/reflex/reflex-api
 Environment=\"PATH=$python_venv/bin\"
-ExecStart=/home/reflex/.local/share/virtualenvs/VIRTUAL_ENV_ID/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"production\")'
+ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"production\")'
 
 [Install]
 WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
