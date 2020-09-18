@@ -1,9 +1,13 @@
 #!/bin/bash
-while getopts u:d:p:f: option do
-    case "${option}" in
-        u) UNINSTALL=${OPTARG};;
+while getopts u:h: flag
+do
+    case "${flag}" in
+        u) uninstall=true;;
+        h) help=true;;
     esac
 done
+echo $uninstall
+echo $help
 
 cleanup=${environment:-cleanup}
 if [ "$EUID" -ne 0 ]
