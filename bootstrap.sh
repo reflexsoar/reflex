@@ -4,6 +4,7 @@ do
     case "${flag}" in
         u) uninstall=true ;;
         i) install=true ;;
+        t) test=true ;;
         h) echo "usage: $0 [-h] [-u uninstall] [-i install (default is to install)]"; exit ;;
     esac
 done
@@ -31,7 +32,7 @@ if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
 fi
 starting_directory=$PWD
 
-if [ ! -z "$uninstall" ]; then
+if [ ! -z "$uninstall" ] || [ ! -z "$test" ]; then
     echo "Uninstalling reflex"
     echo "Removing reflex service"
     service reflex stop > /dev/null 2>&1
@@ -56,7 +57,7 @@ if [ -z "$install"] && [ ! -z "$uninstall" ]; then
     install=true
 fi
 
-if [ -z "$install" ]; then
+if [ -z "$install" ] || [ -z "$test" ]; then
     MASTER_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 128 | head -n 1)
     SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
     SECURITY_PASSWORD_SALT=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
@@ -82,9 +83,7 @@ if [ -z "$install" ]; then
     chown -R reflex:reflex /opt/reflex
     chmod 400 /opt/reflex/reflex-api/instance/application.conf
     python_venv=$(sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv --venv")
-    echo "Python venv is : $python_venv"
-
-    cpu_cores=echo "$(grep -c processor /proc/cpuinfo)"
+    cpu_cores=$(grep -c processor /proc/cpuinfo)
     echo "[Unit]
 Description=Gunicorn instance to server Reflex API
 After=network.target
