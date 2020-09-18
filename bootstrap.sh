@@ -63,4 +63,8 @@ if [ -z "$install" ]; then
     wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zip
     unzip /opt/reflex.zip -d /opt
     rm -f /opt/reflex.zip
+    useradd reflex -m -s /bin/bash 
+    chown -R reflex /opt/reflex
+    export FLASK_CONFIG="production"
+    sudo --preserve-env=FLASK_CONFIG -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db init
 fi
