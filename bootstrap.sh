@@ -31,6 +31,7 @@ if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
 fi
 
 if [ ! -z "$uninstall" ]; then
+    echo "Uninstall reflex"
     service reflex stop > /dev/null 2>&1
     rm -rf /opt/reflex
     rm -f /etc/systemd/system/reflex-api.service
@@ -44,6 +45,7 @@ if [ -z "$install"] && [ ! -z "$uninstall" ]; then
 fi
 
 if [ -z "$install" ]; then
+    echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
         yum install -y python3-pip wget unzip
