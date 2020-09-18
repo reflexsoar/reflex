@@ -32,11 +32,14 @@ fi
 
 if [ ! -z "$uninstall" ]; then
     echo "Uninstalling reflex"
+    echo "Removing reflex service"
     service reflex stop > /dev/null 2>&1
-    userdel reflex
-    rm -rf /opt/reflex
     rm -f /etc/systemd/system/reflex-api.service
     systemctl daemon-reload
+    echo "Removing user reflex"
+    userdel reflex
+    echo "Cleaning up files in /opt/reflex"
+    rm -rf /opt/reflex
     echo "Nginx is not removed as part of this script due to potentially removing a production web site."
     echo "To uninstall nginx, run the below command(s):"
     if [ "$os" == "centos" ]; then
