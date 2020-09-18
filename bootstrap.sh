@@ -1,16 +1,8 @@
 #!/bin/bash
-while [ "$1" != "" ]; do
-    case $1 in
-        -u | --uninstall )           shift
-                                filename="$1"
-                                ;;
-        -h | --help )           usage
-                                exit
-                                ;;
-        * )                     usage
-                                exit 1
+while getopts u:d:p:f: option do
+    case "${option}" in
+        u) UNINSTALL=${OPTARG};;
     esac
-    shift
 done
 
 cleanup=${environment:-cleanup}
