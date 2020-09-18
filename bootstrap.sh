@@ -39,6 +39,9 @@ if $uninstall; then
     
 fi
 
+echo "Install is $install"
+echo "Uninstall is $uninstall"
+
 if [ -z "$install"] && "$uninstall" -ne "true"; then
     install=true
 fi
