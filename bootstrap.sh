@@ -2,8 +2,8 @@
 while getopts ":uh" flag
 do
     case "${flag}" in
-        u) uninstall=true ;;
-        i) install=true ;;
+        u) uninstall=false ;;
+        i) install ;;
         h) echo "usage: $0 [-h] [-u uninstall] [-i install (default is to install)]"; exit ;;
     esac
 done
