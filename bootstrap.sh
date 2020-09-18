@@ -37,13 +37,13 @@ if [ ! -z "$uninstall" ]; then
     rm -f /etc/systemd/system/reflex-api.service
     systemctl daemon-reload
     echo "Nginx is not removed as part of this script due to potentially removing a production web site."
-    echo "To uninstall nginx, run the below commands:"
+    echo "To uninstall nginx, run the below command(s):"
     if [ "$os" == "centos" ]; then
         echo "yum remove nginx"
     else
         echo "apt remove -f nginx"
+        echo "apt purge nginx"
     fi
-
 fi
 
 if [ -z "$install"] && [ ! -z "$uninstall" ]; then
@@ -60,8 +60,7 @@ if [ -z "$install" ]; then
         apt install -y python3-pip wget unzip
     fi
     pip3 install pipenv
-    wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zip
-    cd /opt
-    unzip reflex.zip
-    rm -f reflex.zip
+    wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zipt
+    unzip /opt/reflex.zip -d /opt
+    rm -f /opt/reflex.zip
 fi
