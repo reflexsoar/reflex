@@ -53,7 +53,7 @@ if [ ! -z "$uninstall" ] || [ ! -z "$test" ]; then
     fi
 fi
 
-if [ -z "$install"] && [ ! -z "$uninstall" ]; then
+if [ -z "$install"] && [ ! -z "$uninstall" ] && [ ! -z "$test" ]; then
     install=true
 fi
 
