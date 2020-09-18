@@ -57,6 +57,9 @@ if [ -z "$install"] && [ ! -z "$uninstall" ]; then
 fi
 
 if [ -z "$install" ]; then
+    MASTER_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+    SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+    SECURITY_PASSWORD_SALT=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
     echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
@@ -71,8 +74,14 @@ if [ -z "$install" ]; then
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
     rm -rf /opt/reflex/reflex-api/migrations
     useradd reflex -m -s /bin/bash
-    chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
+    echo "MASTER_PASSWORD=$MASTER_PASSWORD" > /opt/reflex/reflex-api/instance/application.conf
+    echo "SECRET_KEY=$SECRET_KEY" >> /opt/reflex/reflex-api/instance/application.conf
+    echo "SECURITY_PASSWORD_SALT=$SECURITY_PASSWORD_SALT" >> /opt/reflex/reflex-api/instance/application.conf
+    chown -R reflex:reflex /opt/reflex
+    chmod 400 /opt/reflex/reflex-api/instance/application.conf
+    python_venv=$(sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv --venv")
+    echo "Python venv is : $python_venv"
 fi
 cd $starting_directory
