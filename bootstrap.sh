@@ -69,6 +69,7 @@ if [ -z "$install" ]; then
     mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
+    rm -rf /opt/reflex/reflex-api/migrations
     useradd reflex -m -s /bin/bash
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
