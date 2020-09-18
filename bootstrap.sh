@@ -68,7 +68,7 @@ if [ -z "$install" ]; then
     pip3 install pipenv
     mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
-    git clone git@github.com:reflexsoar/reflex-api.git .
+    git clone https://github.com/reflexsoar/reflex-api.git .
     useradd reflex -m -s /bin/bash
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
