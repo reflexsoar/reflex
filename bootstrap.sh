@@ -8,7 +8,7 @@ do
     esac
 done
 
-if [ -z "$uninstall" ] && [ -z "$install" ]; then
+if [ ! -z "$uninstall" ] && [ ! -z "$install" ]; then
     echo "You cannot use -i and -u at the same time"
     exit
 fi
@@ -30,7 +30,7 @@ if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
     exit
 fi
 
-if $uninstall; then
+if [ ! -z "$uninstall" ]; then
     service reflex stop > /dev/null 2>&1
     rm -rf /opt/reflex
     rm -f /etc/systemd/system/reflex-api.service
@@ -39,14 +39,11 @@ if $uninstall; then
     
 fi
 
-echo "Install is $install"
-echo "Uninstall is $uninstall"
-
-if [ -z "$install"] && "$uninstall" -ne "true"; then
+if [ -z "$install"] && [ ! -z "$uninstall" ]; then
     install=true
 fi
 
-if $install; then
+if [ -z "$install" ]; then
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
         yum install -y python3-pip wget unzip
