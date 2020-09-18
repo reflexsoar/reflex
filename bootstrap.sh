@@ -71,5 +71,5 @@ if [ -z "$install" ]; then
     chown -R reflex /opt/reflex
     export FLASK_CONFIG="production"
     export PIPENV_PIPFILE=/home/reflex/Pipfile
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db init
+    sudo --preserve-env=FLASK_CONFIG -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db init
 fi
