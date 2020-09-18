@@ -4,15 +4,14 @@ do
     case "${flag}" in
         u) uninstall=true ;;
         i) install=true ;;
-        t) test=true ;;
         h) echo "usage: $0 [-h] [-u uninstall] [-i install (default is to install)]"; exit ;;
     esac
 done
 
-if [ ! -z "$uninstall" ] && [ ! -z "$install" ]; then
-    echo "You cannot use -i and -u at the same time"
-    exit
-fi
+#if [ ! -z "$uninstall" ] && [ ! -z "$install" ]; then
+#    echo "You cannot use -i and -u at the same time"
+#    exit
+#fi
 
 if [ "$EUID" -ne 0 ]; then
     echo "Please run with sudo or as root"
@@ -53,7 +52,7 @@ if [ ! -z "$uninstall" ] || [ ! -z "$test" ]; then
     fi
 fi
 
-if [ -z "$install"] && [ ! -z "$uninstall" ] && [ ! -z "$test" ]; then
+if [ -z "$install"] && [ ! -z "$uninstall" ]; then
     install=true
 fi
 
