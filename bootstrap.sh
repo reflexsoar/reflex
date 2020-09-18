@@ -35,6 +35,7 @@ if [ ! -z "$uninstall" ]; then
     service reflex stop > /dev/null 2>&1
     rm -rf /opt/reflex
     rm -f /etc/systemd/system/reflex-api.service
+    systemctl daemon-reload
     echo "Nginx is not removed as part of this script due to potentially removing a production web site."
     echo "To uninstall nginx, run the below commands:"
     if [ "$os" == "centos" ]; then
@@ -42,6 +43,7 @@ if [ ! -z "$uninstall" ]; then
     else
         echo "apt remove -f nginx"
     fi
+
 fi
 
 if [ -z "$install"] && [ ! -z "$uninstall" ]; then
