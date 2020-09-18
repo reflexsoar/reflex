@@ -60,20 +60,18 @@ if [ -z "$install" ]; then
     echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
-        yum install -y python3-pip wget unzip
+        yum install -y python3-pip git
     fi
     if [[ "$os" == "ubuntu" ]]; then
-        apt install -y python3-pip wget unzip
+        apt install -y python3-pip git
     fi
     pip3 install pipenv
-    wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zip
-    unzip /opt/reflex.zip -d /opt
-    rm -f /opt/reflex.zip
-    useradd reflex -m -s /bin/bash 
+    mkdir -p /opt/reflex/reflex-api
+    cd /opt/reflex/reflex-api
+    git clone git@github.com:reflexsoar/reflex-api.git .
+    useradd reflex -m -s /bin/bash
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
-    #chmod +x database_initialization.sh
-    #sudo -u reflex bash -c "./database_initialization.sh"
 fi
 cd $starting_directory
