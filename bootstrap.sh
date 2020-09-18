@@ -2,13 +2,13 @@
 while getopts ":uh" flag
 do
     case "${flag}" in
-        u) uninstall=false ;;
-        i) install ;;
+        u) uninstall=true ;;
+        i) install=true ;;
         h) echo "usage: $0 [-h] [-u uninstall] [-i install (default is to install)]"; exit ;;
     esac
 done
 
-if $uninstall && $install; then
+if [ "$uninstall" -eq "true" ] && [ "$install" -eq "true" ]; then
     echo "You cannot use -i and -u at the same time"
     exit
 fi
