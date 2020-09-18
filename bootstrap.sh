@@ -34,7 +34,7 @@ starting_directory=$PWD
 if [ ! -z "$uninstall" ]; then
     echo "Uninstalling reflex"
     echo "Removing reflex service"
-    service reflex stop > /dev/null 2>&1
+    service reflex-api stop > /dev/null 2>&1
     rm -f /etc/systemd/system/reflex-api.service
     systemctl daemon-reload
     echo "Removing user reflex"
@@ -98,6 +98,8 @@ ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.
 
 [Install]
 WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
+systemctl daemon-reload
+service reflex-api start
 
 fi
 cd $starting_directory
