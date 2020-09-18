@@ -8,6 +8,8 @@ do
     esac
 done
 
+reflex_api_path="/opt/reflex/reflex-api"
+
 if [ ! -z "$uninstall" ] && [ ! -z "$install" ]; then
     echo "You cannot use -i and -u at the same time"
     exit
@@ -72,15 +74,15 @@ if [ -z "$install" ]; then
     chown -R reflex:reflex /opt/reflex
     export FLASK_CONFIG="production"
     export PIPENV_PIPFILE=/opt/reflex/reflex-api/Pipfile
-    cd /opt/reflex/reflex-api
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex -i PWD=/opt/reflex/reflex-api pipenv install --dev
+    cd $reflex_api_path
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex cd $reflex_api_path; pipenv install --dev
     echo "Initializing database"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex -i PWD=/opt/reflex/reflex-api pipenv run python /opt/reflex/reflex-api/manage.py db init
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex cd $reflex_api_path; pipenv run python /opt/reflex/reflex-api/manage.py db init
     echo "Performing any necessary migrations"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex -i PWD=/opt/reflex/reflex-api pipenv run python /opt/reflex/reflex-api/manage.py db migrate
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex cd $reflex_api_path; pipenv run python /opt/reflex/reflex-api/manage.py db migrate
     echo "Running db upgrades"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex -i PWD=/opt/reflex/reflex-api pipenv run python /opt/reflex/reflex-api/manage.py db upgrade
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex cd $reflex_api_path; pipenv run python /opt/reflex/reflex-api/manage.py db upgrade
     echo "Installing reflex API"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex -i PWD=/opt/reflex/reflex-api pipenv run python /opt/reflex/reflex-api/manage.py setup
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex cd $reflex_api_path; pipenv run python /opt/reflex/reflex-api/manage.py setup
 fi
 cd $starting_directory
