@@ -75,12 +75,12 @@ if [ -z "$install" ]; then
     cd /opt/reflex/reflex-api
     sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv install --dev
     echo "Initializing database"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db init
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python manage.py db init
     echo "Performing any necessary migrations"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db migrate
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python manage.py db migrate
     echo "Running db upgrades"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py db upgrade
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python manage.py db upgrade
     echo "Installing reflex API"
-    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python /opt/reflex/reflex-api/manage.py setup
+    sudo --preserve-env=FLASK_CONFIG --preserve-env=PIPENV_PIPFILE -u reflex pipenv run python manage.py setup
 fi
 cd $starting_directory
