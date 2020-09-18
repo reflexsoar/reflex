@@ -1,19 +1,13 @@
 #!/bin/bash
-while getopts u:h: flag
+while getopts ":uh" flag
 do
     case "${flag}" in
-        u) uninstall=true;;
-        h) help=true;;
+        u) uninstall=true ;;
+        h) echo "usage: $0 [-h] [-u uninstall]"; exit ;;
     esac
 done
 echo $uninstall
 echo $help
-
-if $help; then
-    echo ''
-    echo '-u uninstall | Uninstalls reflex'
-    echo '-h help | Shows help documentation'
-    exit
 
 cleanup=${environment:-cleanup}
 if [ "$EUID" -ne 0 ]
