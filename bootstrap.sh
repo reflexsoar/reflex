@@ -60,7 +60,7 @@ if [ -z "$install" ]; then
         apt install -y python3-pip wget unzip
     fi
     pip3 install pipenv
-    wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zipt
+    wget https://www.hasecuritysolutions.com/reflex_1.0.zip -O /opt/reflex.zip
     unzip /opt/reflex.zip -d /opt
     rm -f /opt/reflex.zip
 fi
