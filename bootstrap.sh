@@ -39,7 +39,7 @@ if $uninstall; then
     
 fi
 
-if [ -z "$install"]; then
+if [ -z "$install"] && "$uninstall" -ne "true"; then
     install=true
 fi
 
