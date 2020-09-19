@@ -78,18 +78,18 @@ if [ ! -z "$install" ]; then
         make altinstall
         rm -f Python-3.8.5.tgz
         git clone https://github.com/pyenv/pyenv.git /opt/pyenv
-        export PYENV_ROOT="/opt/pyenv"
+        export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
 
         if command -v pyenv 1>/dev/null 2>&1; then
             eval "$(pyenv init -)"
         fi
-        echo 'export PYENV_ROOT="/opt/pyenv"
+        echo 'export PYENV_ROOT="$HOME/.pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
 
         if command -v pyenv 1>/dev/null 2>&1; then
             eval "$(pyenv init -)"
-        fi' >> /etc/bashrc
+        fi' >> $HOME/.bashrc
     fi
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
@@ -99,7 +99,7 @@ if [ ! -z "$install" ]; then
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
     rm -rf /opt/reflex/reflex-api/migrations
     useradd reflex -m -s /bin/bash
-    export FLASK_CONFIG="production"
+    export FLASK_CONFIG="development"
     chown -R reflex:reflex /opt/reflex
     sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install pipenv
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; /usr/local/bin/pipenv install --dev; /usr/local/bin/pipenv run python manage.py db init; /usr/local/bin/pipenv run python manage.py db migrate; /usr/local/bin/pipenv run python manage.py db upgrade; /usr/local/bin/pipenv run python manage.py setup;"
@@ -120,7 +120,7 @@ User=reflex
 Group=www-data
 WorkingDirectory=/opt/reflex/reflex-api
 Environment=\"PATH=$python_venv/bin\"
-ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"production\")'
+ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"development\")'
 
 [Install]
 WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
@@ -129,8 +129,11 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
 
     # Set up Reflex UI
     mkdir -p /opt/reflex/ui
-    cd /opt/reflex/ui
-    git clone https://github.com/reflexsoar/reflex-ui.git .
+    cd /opt/reflex
+    wget https://github.com/reflexsoar/reflex-ui/releases/download/0.1/ui.zip
+    unzip ui.zip
+    rm -f ui.zip
+    chown -R reflex:reflex /opt/reflex/ui
 
     mkdir -p /opt/reflex/ssl
     openssl dhparam -dsaparam -out /opt/reflex/ssl/ssl-dhparams.pem 4096
@@ -170,7 +173,6 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
     ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA";
-    
     ssl_dhparam /opt/reflex/ssl/ssl-dhparams.pem;
 
 }
