@@ -70,28 +70,26 @@ if [ ! -z "$install" ]; then
         fi
         yum install -y nginx
         yum -y groupinstall "Development Tools"
-        #cd /tmp
-        #wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
-        #tar xvf Python-3.8.5.tgz
-        #cd Python-3.8*/
-        #./configure --enable-optimizations
-        #make altinstall
-        #rm -f Python-3.8.5.tgz
-        git clone https://github.com/pyenv/pyenv.git $HOME/.pyenv
-        export PYENV_ROOT="$HOME/.pyenv"
+        cd /tmp
+        wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
+        tar xvf Python-3.8.5.tgz
+        cd Python-3.8*/
+        ./configure --enable-loadable-sqlite-extensions --enable-optimizations
+        make altinstall
+        rm -f Python-3.8.5.tgz
+        git clone https://github.com/pyenv/pyenv.git /opt/pyenv
+        export PYENV_ROOT="/opt/pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
 
         if command -v pyenv 1>/dev/null 2>&1; then
             eval "$(pyenv init -)"
         fi
-        echo 'export PYENV_ROOT="$HOME/.pyenv"
+        echo 'export PYENV_ROOT="/opt/pyenv"
         export PATH="$PYENV_ROOT/bin:$PATH"
 
         if command -v pyenv 1>/dev/null 2>&1; then
             eval "$(pyenv init -)"
         fi' >> /etc/bashrc
-        pyenv install 3.8.5
-        pyenv global 3.8.5
     fi
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
