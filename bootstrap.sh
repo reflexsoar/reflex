@@ -64,7 +64,7 @@ if [ ! -z "$install" ]; then
     echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
-        yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel
+        yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel readline-devel zlib-devel
         if [[ "$os_version" == *"7"* ]]; then
             yum install -y epel-release
         fi
@@ -135,7 +135,6 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
     git clone https://github.com/reflexsoar/reflex-ui.git .
 
     mkdir -p /opt/reflex/ssl
-    openssl dhparam -out /opt/reflex/ssl/ssl-dhparams.pem 4096
     openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
                 -subj "/C=US/ST=IL/O=H & A Security Solutions, LLC/CN=reflexsoar" \
                 -keyout /opt/reflex/ssl/server.key  -out /opt/reflex/ssl/server.crt
