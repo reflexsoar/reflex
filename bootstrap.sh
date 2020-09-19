@@ -73,7 +73,6 @@ if [ ! -z "$install" ]; then
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
     fi
-    pip3 install --user pipenv
     mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
@@ -81,6 +80,7 @@ if [ ! -z "$install" ]; then
     useradd reflex -m -s /bin/bash
     export FLASK_CONFIG="production"
     chown -R reflex:reflex /opt/reflex
+    sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install --user pipenv
     sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
     mkdir -p /opt/reflex/reflex-api/instance
     echo "MASTER_PASSWORD = '$MASTER_PASSWORD'" > /opt/reflex/reflex-api/instance/application.conf
