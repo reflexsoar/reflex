@@ -89,7 +89,7 @@ if [ ! -z "$install" ]; then
 
         if command -v pyenv 1>/dev/null 2>&1; then
             eval "$(pyenv init -)"
-        fi' > /etc/bashrc
+        fi' >> /etc/bashrc
         pyenv install 3.8.5
         pyenv global 3.8.5
     fi
