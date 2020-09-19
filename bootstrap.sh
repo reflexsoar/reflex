@@ -63,6 +63,12 @@ if [ ! -z "$install" ]; then
     SECURITY_PASSWORD_SALT=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
     echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
+    if [[ "$os_version" == *"CentOS"* ]]; then
+        os="centos"
+    fi
+    if [[ "$os_version" == *"Ubuntu"* ]]; then
+        os="ubuntu"
+    fi
     if [[ "$os" == "centos" ]]; then
         yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel readline-devel zlib-devel
         if [[ "$os_version" == *"7"* ]]; then
