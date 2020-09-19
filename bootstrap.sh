@@ -73,7 +73,7 @@ if [ ! -z "$install" ]; then
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
     fi
-    pip3 install pipenv
+    pip3 install --user pipenv
     mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
     git clone --single-branch --branch dev https://github.com/reflexsoar/reflex-api.git .
