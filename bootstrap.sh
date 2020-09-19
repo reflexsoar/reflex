@@ -164,6 +164,6 @@ server {
 
 
 }" > /etc/nginx/conf.d/reflex.conf
-
+    service nginx restart
 fi
 cd $starting_directory
