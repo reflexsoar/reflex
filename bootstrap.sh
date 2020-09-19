@@ -66,7 +66,7 @@ if [ ! -z "$install" ]; then
     if [[ "$os" == "centos" ]]; then
         yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel
         if [[ "$os_version" == *"7"* ]]; then
-            yum install -y epel-release # This check failed
+            yum install -y epel-release
         fi
         yum install -y nginx
         yum -y groupinstall "Development Tools"
