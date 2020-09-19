@@ -40,6 +40,7 @@ if [ ! -z "$uninstall" ]; then
     echo "Removing user reflex"
     userdel reflex
     rm -rf /home/reflex
+    rm -rf /var/spool/mail/reflex
     echo "Cleaning up files in /opt/reflex"
     rm -rf /opt/reflex
     echo "Nginx is not removed as part of this script due to potentially removing a production web site."
