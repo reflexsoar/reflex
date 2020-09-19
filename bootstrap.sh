@@ -80,8 +80,17 @@ if [ ! -z "$install" ]; then
     useradd reflex -m -s /bin/bash
     export FLASK_CONFIG="production"
     chown -R reflex:reflex /opt/reflex
-    #sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install --user pipenv
-    sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pip3 install --user pipenv; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
+    
+    yum -y groupinstall "Development Tools"
+    yum -y install openssl-devel bzip2-devel libffi-devel wget
+    cd /tmp
+    wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
+    tar xvf Python-3.8.5.tgz
+    cd Python-3.8*/
+    ./configure --enable-optimizations
+
+    sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install --user pipenv
+    sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
     mkdir -p /opt/reflex/reflex-api/instance
     echo "MASTER_PASSWORD = '$MASTER_PASSWORD'" > /opt/reflex/reflex-api/instance/application.conf
     echo "SECRET_KEY = '$SECRET_KEY'" >> /opt/reflex/reflex-api/instance/application.conf
@@ -112,12 +121,12 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
     git clone https://github.com/reflexsoar/reflex-ui.git .
 
     mkdir -p /opt/reflex/ssl
-    openssl dhparam -out dhparam.pem 4096
+    openssl dhparam -out /opt/reflex/ssl/ssl-dhparams.pem 4096
     openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
                 -subj "/C=US/ST=IL/O=H & A Security Solutions, LLC/CN=reflexsoar" \
                 -keyout /opt/reflex/ssl/server.key  -out /opt/reflex/ssl/server.crt
 
-    echo "server {
+    echo 'server {
    server_name reflexsoar;
 
    location /api/v1.0 {
@@ -148,23 +157,23 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
     ssl_session_tickets off;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
-    ssl_ciphers \"ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA\";
+    ssl_ciphers "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA";
     
     ssl_dhparam /opt/reflex/ssl/ssl-dhparams.pem;
 
 }
 server {
-    if ($host = staging.reflexsoar.com) {
+    if ($host = reflexsoar) {
         return 301 https://$host$request_uri;
-    } # managed by Certbot
+    }
 
 
    listen 80;
-   server_name staging.reflexsoar.com;
-    return 404; # managed by Certbot
+   server_name reflexsoar;
+    return 404;
 
 
-}" > /etc/nginx/conf.d/reflex.conf
+}' > /etc/nginx/conf.d/reflex.conf
     service nginx restart
 fi
 cd $starting_directory
