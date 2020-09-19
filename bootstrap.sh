@@ -135,6 +135,7 @@ WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
     git clone https://github.com/reflexsoar/reflex-ui.git .
 
     mkdir -p /opt/reflex/ssl
+    openssl dhparam -dsaparam -out /opt/reflex/ssl/ssl-dhparams.pem 4096
     openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
                 -subj "/C=US/ST=IL/O=H & A Security Solutions, LLC/CN=reflexsoar" \
                 -keyout /opt/reflex/ssl/server.key  -out /opt/reflex/ssl/server.crt
