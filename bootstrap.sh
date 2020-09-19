@@ -64,9 +64,13 @@ if [ ! -z "$install" ]; then
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
         yum install -y python3-pip git
+        if [ "$os_version" == *"7"* ]; then
+            yum install -y epel-release
+        fi
+        yum install -y nginx
     fi
     if [[ "$os" == "ubuntu" ]]; then
-        apt install -y python3-pip git
+        apt install -y python3-pip git nginx
     fi
     pip3 install pipenv
     mkdir -p /opt/reflex/reflex-api
@@ -98,8 +102,68 @@ ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.
 
 [Install]
 WantedBy=multi-user.target" > /etc/systemd/system/reflex-api.service
-systemctl daemon-reload
-service reflex-api start
+    systemctl daemon-reload
+    service reflex-api start
+
+    # Set up Reflex UI
+    mkdir -p /opt/reflex/ui
+    cd /opt/reflex/ui
+    git clone https://github.com/reflexsoar/reflex-ui.git .
+
+    mkdir -p /opt/reflex/ssl
+    openssl dhparam -out dhparam.pem 4096
+    openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
+                -subj "/C=US/ST=IL/O=H & A Security Solutions, LLC/CN=reflexsoar" \
+                -keyout /opt/reflex/ssl/server.key  -out /opt/reflex/ssl/server.crt
+
+    echo "server {
+   server_name reflexsoar;
+
+   location /api/v1.0 {
+        proxy_pass http://unix:/opt/reflex/reflex-api/reflex-api.sock;
+        proxy_redirect off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout   600;
+        proxy_send_timeout      600;
+        proxy_read_timeout      600;
+        send_timeout            600;
+   }
+
+   location / {
+        alias /opt/reflex/ui/;
+        index index.html;
+   }
+
+
+    listen 443 ssl;
+    ssl_certificate /opt/reflex/ssl/server.crt;
+    ssl_certificate_key /opt/reflex/ssl/server.key;
+    ssl_session_cache shared:le_nginx_SSL:10m;
+    ssl_session_timeout 1440m;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers \"ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA\";
+    
+    ssl_dhparam /opt/reflex/ssl/ssl-dhparams.pem;
+
+}
+server {
+    if ($host = staging.reflexsoar.com) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+   listen 80;
+   server_name staging.reflexsoar.com;
+    return 404; # managed by Certbot
+
+
+}" > /etc/nginx/conf.d/reflex.conf
 
 fi
 cd $starting_directory
