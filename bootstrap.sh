@@ -19,14 +19,11 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
-if [[ "$os_version" == "CentOS"* ]]; then
-    os="centos"
-fi
 if [[ "$os_version" == "Ubuntu"* ]]; then
     os="ubuntu"
 fi
-if [ "$os" != "centos" ] && [ "$os" != "ubuntu" ]; then
-    echo "This script is only supported on centos and ubuntu"
+if [ "$os" != "ubuntu" ]; then
+    echo "This script is only supported on ubuntu"
     exit
 fi
 starting_directory=$PWD
@@ -45,12 +42,8 @@ if [ ! -z "$uninstall" ]; then
     rm -rf /opt/reflex
     echo "Nginx is not removed as part of this script due to potentially removing a production web site."
     echo "To uninstall nginx, run the below command(s):"
-    if [ "$os" == "centos" ]; then
-        echo "yum remove nginx"
-    else
-        echo "apt remove -f nginx"
-        echo "apt purge nginx"
-    fi
+    echo "apt remove -f nginx"
+    echo "apt purge nginx"
 fi
 
 if [ -z "$install" ] && [ -z "$uninstall" ]; then
@@ -62,43 +55,6 @@ if [ ! -z "$install" ]; then
     SECRET_KEY=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
     SECURITY_PASSWORD_SALT=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
     echo "Installing reflex"
-    os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
-    if [[ "$os_version" == *"CentOS"* ]]; then
-        os="centos"
-    fi
-    if [[ "$os_version" == *"Ubuntu"* ]]; then
-        os="ubuntu"
-    fi
-    if [[ "$os" == "centos" ]]; then
-        yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel readline-devel zlib-devel
-        if [[ "$os_version" == *"7"* ]]; then
-            yum install -y epel-release
-        fi
-        yum install -y nginx
-        yum -y groupinstall "Development Tools"
-        #cd /tmp
-        #wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
-        #tar xvf Python-3.8.5.tgz
-        #cd Python-3.8*/
-        #./configure --enable-loadable-sqlite-extensions --enable-optimizations
-        #make altinstall
-        #rm -f Python-3.8.5.tgz
-        git clone https://github.com/pyenv/pyenv.git /opt/pyenv
-        export PYENV_ROOT="$HOME/.pyenv"
-        export PATH="$PYENV_ROOT/bin:$PATH"
-
-        if command -v pyenv 1>/dev/null 2>&1; then
-            eval "$(pyenv init -)"
-        fi
-        echo 'export PYENV_ROOT="$HOME/.pyenv"
-        export PATH="$PYENV_ROOT/bin:$PATH"
-
-        if command -v pyenv 1>/dev/null 2>&1; then
-            eval "$(pyenv init -)"
-        fi' >> $HOME/.bashrc
-        pyenv install 3.8.5
-        pyenv global 3.8.5
-    fi
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
     fi
