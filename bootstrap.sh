@@ -64,11 +64,34 @@ if [ ! -z "$install" ]; then
     echo "Installing reflex"
     os_version=$(hostnamectl | grep "Operating System" | cut -d":" -f2 | cut -d" " -f2-)
     if [[ "$os" == "centos" ]]; then
-        yum install -y python3-pip git
-        if [ "$os_version" == *"7"* ]; then
-            yum install -y epel-release
+        yum install -y python3-pip git openssl-devel bzip2-devel libffi-devel wget sqlite-devel libsqlite3x-devel
+        if [[ "$os_version" == *"7"* ]]; then
+            yum install -y epel-release # This check failed
         fi
         yum install -y nginx
+        yum -y groupinstall "Development Tools"
+        #cd /tmp
+        #wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
+        #tar xvf Python-3.8.5.tgz
+        #cd Python-3.8*/
+        #./configure --enable-optimizations
+        #make altinstall
+        #rm -f Python-3.8.5.tgz
+        git clone https://github.com/pyenv/pyenv.git $HOME/.pyenv
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+
+        if command -v pyenv 1>/dev/null 2>&1; then
+            eval "$(pyenv init -)"
+        fi
+        echo 'export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+
+        if command -v pyenv 1>/dev/null 2>&1; then
+            eval "$(pyenv init -)"
+        fi' > /etc/bashrc
+        pyenv install 3.8.5
+        pyenv global 3.8.5
     fi
     if [[ "$os" == "ubuntu" ]]; then
         apt install -y python3-pip git nginx
@@ -80,17 +103,8 @@ if [ ! -z "$install" ]; then
     useradd reflex -m -s /bin/bash
     export FLASK_CONFIG="production"
     chown -R reflex:reflex /opt/reflex
-    
-    yum -y groupinstall "Development Tools"
-    yum -y install openssl-devel bzip2-devel libffi-devel wget
-    cd /tmp
-    wget https://www.python.org/ftp/python/3.8.5/Python-3.8.5.tgz
-    tar xvf Python-3.8.5.tgz
-    cd Python-3.8*/
-    ./configure --enable-optimizations
-
-    sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install --user pipenv
-    sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; pipenv install --dev; pipenv run python manage.py db init; pipenv run python manage.py db migrate; pipenv run python manage.py db upgrade; pipenv run python manage.py setup;"
+    sudo --preserve-env=FLASK_CONFIG -u reflex pip3 install pipenv
+    sudo --preserve-env=FLASK_CONFIG -u reflex bash -c "cd /opt/reflex/reflex-api; /usr/local/bin/pipenv install --dev; /usr/local/bin/pipenv run python manage.py db init; /usr/local/bin/pipenv run python manage.py db migrate; /usr/local/bin/pipenv run python manage.py db upgrade; /usr/local/bin/pipenv run python manage.py setup;"
     mkdir -p /opt/reflex/reflex-api/instance
     echo "MASTER_PASSWORD = '$MASTER_PASSWORD'" > /opt/reflex/reflex-api/instance/application.conf
     echo "SECRET_KEY = '$SECRET_KEY'" >> /opt/reflex/reflex-api/instance/application.conf
