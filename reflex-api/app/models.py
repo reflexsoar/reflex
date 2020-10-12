@@ -1008,7 +1008,7 @@ class Event(Base):
 
     title = db.Column(db.String(255), nullable=False)
     reference = db.Column(db.String(255), nullable=False)
-    description = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=False)
     tlp = db.Column(db.Integer, default=2)
     severity = db.Column(db.Integer, default=2)
     status_id = db.Column(db.String(255), db.ForeignKey('event_status.uuid'))
@@ -1085,7 +1085,7 @@ class CaseStatus(Base):
 
 class Observable(Base):
 
-    value = db.Column(db.String(255))
+    value = db.Column(db.Text)
     dataType_id = db.Column(db.String(255), db.ForeignKey('data_type.uuid'))
     dataType = db.relationship("DataType")
     tlp = db.Column(db.Integer)
