@@ -1104,13 +1104,13 @@ class AddEventsToCase(Resource):
                             continue
                         try:
                             _event_observables += [observable for observable in event.observables]
-                            new_observables += [observable for observable in _event_observables if observable.value.lower() not in [o.value.lower() for o in case.observables and o not in new_observables]]
+                            new_observables += [observable for observable in _event_observables if observable.value.lower() not in [o.value.lower() for o in case.observables if o not in new_observables]]
                             event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user().organization_uuid).first()
                             case.events.append(event)
                             case.save()
                             response['results'].append({'reference': evt, 'message': 'Event successfully merged into Case.'})
                         except Exception as e:
-                            response['results'].append({'reference': evt, 'message': 'An error occurred while processing event observables.'})
+                            response['results'].append({'reference': evt, 'message': 'An error occurred while processing event observables. {}'.format(e)})
                             response['success'] = False
                     else:
                         response['results'].append({'reference': evt, 'message': 'Event not found.'})
@@ -3437,19 +3437,39 @@ class UpdateUserToGroup(Resource):
             ns_user_group.abort(404, 'Group not found.')
 
 
+agent_group_parser = pager_parser.copy()
+
 @ns_agent_group.route("")
 class AgentGroupList(Resource):
 
     @api.doc(security="Bearer")
-    @api.marshal_with(mod_agent_group_list, as_list=True)
+    @api.expect(agent_group_parser)
+    @api.marshal_with(mod_paged_agent_group_list)
     @token_required
     @user_has('view_agent_groups')
     def get(self, current_user):
         ''' Gets a list of agent_groups '''
+
+        args = agent_group_parser.parse_args()
+
+        base_query = db.session.query(AgentGroup).filter_by(organization_uuid=current_user().organization_uuid)
+        query, pagination = apply_pagination(base_query, page_number=args['page'], page_size=args['page_size'])
+        response = {
+            'groups': query.all(),
+            'pagination': {
+                'total_results': pagination.total_results,
+                'pages': pagination.num_pages,
+                'page': pagination.page_number,
+                'page_size': pagination.page_size
+            }
+        }
+        return response
+
         return AgentGroup.query.filter_by(organization_uuid=current_user().organization_uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_agent_group_create)
+    @api.marshal_with(mod_agent_group_list)
     @api.response('409', 'AgentGroup already exists.')
     @api.response('200', "Successfully created the Agent Group.")
     @token_required
@@ -3461,7 +3481,7 @@ class AgentGroupList(Resource):
         if not agent_group:
             agent_group = AgentGroup(organization_uuid=current_user().organization_uuid, **api.payload)
             agent_group.create()
-            return {'message': 'Successfully created the Agent Group.'}
+            return agent_group
         else:
             ns_agent_group.abort(409, 'Agent Group already exists.')
         return
@@ -3495,7 +3515,8 @@ class AgentGroupDetails(Resource):
         agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
 
         if agent_group:
-            if 'name' in api.payload and AgentGroup.query.filter_by(name=api.payload['name']).first():
+            exists = AgentGroup.query.filter_by(name=api.payload['name']).first()
+            if 'name' in api.payload and exists.uuid != uuid:
                 ns_agent_group.abort(409, 'Agent Group name already exists.')
             else:
                 agent_group.update(api.payload)
