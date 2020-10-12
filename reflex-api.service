@@ -1,0 +1,13 @@
+[Unit]
+Description=Gunicorn instance to server Reflex API
+After=network.target
+
+[Service]
+User=reflex
+Group=www-data
+WorkingDirectory=/opt/reflex/reflex-api
+Environment=\"PATH=$python_venv/bin\"
+ExecStart=$python_venv/bin/gunicorn --workers $cpu_cores --bind unix:reflex-api.sock -m 007 'app:create_app(\"development\")'
+
+[Install]
+WantedBy=multi-user.target
