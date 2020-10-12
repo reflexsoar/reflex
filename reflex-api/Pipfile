@@ -1,0 +1,32 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+flask-migrate = "*"
+flask-script = "*"
+coverage = "*"
+pybadges = "*"
+coverage-badge = "*"
+elasticsearch = "*"
+python-dotenv = "*"
+bandit = "*"
+
+[packages]
+flask = "*"
+flask-cors = "*"
+flask-bcrypt = "*"
+flask-restx = "*"
+pyjwt = "*"
+flask-socketio = "*"
+cryptography = "*"
+gunicorn = "*"
+psycopg2 = "*"
+pymysql = "*"
+sqlalchemy-filters = "*"
+gevent = "*"
+flask-mail = "*"
+
+[requires]
+python_version = "3.8"
