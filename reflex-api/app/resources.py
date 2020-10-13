@@ -2725,6 +2725,7 @@ event_list_parser.add_argument('severity', action='split', location='args', requ
 event_list_parser.add_argument('grouped', type=xinputs.boolean, location='args', required=False)
 event_list_parser.add_argument('case_uuid', type=str, location='args', required=False)
 event_list_parser.add_argument('search', type=str, location='args', required=False)
+event_list_parser.add_argument('title', type=str, location='args', action='split', required=False)
 event_list_parser.add_argument('page', type=int, location='args', default=1, required=False)
 event_list_parser.add_argument('page_size', type=int, location='args', default=5, required=False)
 
@@ -2762,6 +2763,9 @@ class EventList(Resource):
         # Check if any of the tags are in the list (case sensitive)
         if len(args['tags']) > 0 and not '' in args['tags']:
             filter_spec.append({'model':'Tag', 'field':'name', 'op': 'in', 'value': args['tags']})
+
+        if args['title'] and not '' in args['title']:
+            filter_spec.append({'model':'Event', 'field':'title', 'op':'in', 'value':args['title']})
 
         # Check if any of the severities are in the list
         if args['severity']:
@@ -2982,6 +2986,10 @@ class EventDetails(Resource):
 
             if 'dismiss_reason_uuid' in api.payload:
                 event_status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, closed=True).first()
+                api.payload['status'] = event_status
+
+            if 'status' in api.payload and api.payload['status'] == 0:
+                event_status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, closed=False, name='New').first()
                 api.payload['status'] = event_status
 
             event.update(api.payload)
