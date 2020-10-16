@@ -1310,8 +1310,11 @@ class CaseDetails(Resource):
                         message = '**Description** updated'
 
                     elif f == 'owner_uuid':
+                        print("WE ARE HERE!")
                         if api.payload['owner_uuid'] == '':
+                            
                             api.payload['owner_uuid'] = None
+                            message = 'Case unassigned'
                         else:
                             owner = User.query.filter_by(
                                 uuid=api.payload['owner_uuid']).first()
@@ -2728,6 +2731,7 @@ event_list_parser.add_argument('search', type=str, location='args', required=Fal
 event_list_parser.add_argument('title', type=str, location='args', action='split', required=False)
 event_list_parser.add_argument('page', type=int, location='args', default=1, required=False)
 event_list_parser.add_argument('page_size', type=int, location='args', default=5, required=False)
+event_list_parser.add_argument('sort_by', type=str, location='args', default='created_at', required=False)
 
 @ns_event.route("")
 class EventList(Resource):
@@ -2750,6 +2754,10 @@ class EventList(Resource):
             'value': current_user().organization_uuid
         }]
 
+        # Restrict what fields we can filter by
+        sort_by = args['sort_by']
+        if sort_by not in ['created_at','modified_at', 'severity', 'name', 'tlp']:
+            sort_by = 'created_at'
 
         # Add the signature if we pass it
         if 'signature' in args and args['signature']:
@@ -2794,7 +2802,7 @@ class EventList(Resource):
             filter_spec.append({'model':'EventStatus', 'field':'name', 'op': 'in', 'value': args['status']})
 
         # Import our association tables, many-to-many doesn't have parent/child keys
-        from .models import event_tag_association, observable_event_association        
+        from .models import event_tag_association, observable_event_association
         base_query = db.session.query(Event)
         
         if args['search'] or (len(args['tags']) > 0 and not '' in args['tags']):
@@ -2802,8 +2810,8 @@ class EventList(Resource):
             
         if args['search'] or (len(args['observables']) > 0 and not '' in args['observables']):
             base_query = base_query.join(observable_event_association).join(Observable)
-            
-        base_query = base_query.order_by(desc(Event.created_at))        
+
+        base_query = base_query.order_by(desc(getattr(Event,sort_by)))        
 
         # Return the default view of grouped events
         if args['grouped']:
