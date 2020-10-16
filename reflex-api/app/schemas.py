@@ -65,7 +65,7 @@ mod_user_full = Model('UserFull', {
     'email': fields.String,
     'first_name': fields.String,
     'last_name': fields.String,
-    'last_logon': fields.DateTime,
+    'last_logon': ISO8601(attribute='last_logon'),
     'locked': fields.Boolean,
     'role': fields.Nested(mod_user_role)
 })
@@ -548,7 +548,7 @@ mod_agent_list = Model('AgentList', {
     'groups': fields.List(fields.Nested(mod_agent_group_list)),
     'active': fields.Boolean,
     'ip_address': fields.String,
-    'last_heartbeat': fields.DateTime
+    'last_heartbeat': ISO8601(attribute='last_heartbeat')
 })
 
 mod_case_template_task_create = Model('CaseTemplateTaskCreate', {
@@ -589,8 +589,8 @@ mod_case_task_full = Model('CaseTaskList', {
     'order': fields.Integer,
     'created_at': ISO8601(attribute='created_at'),
     'modified_at': ISO8601(attribute='modified_at'),
-    'start_date': fields.DateTime,
-    'finish_date': fields.DateTime,
+    'start_date': ISO8601(attribute='start_date'),
+    'finish_date': ISO8601(attribute='finish_data'),
     'group': fields.Nested(mod_user_group_list),
     'owner': fields.Nested(mod_user_list),
     'case_uuid': fields.String,
@@ -749,9 +749,9 @@ mod_case_list = Model('CaseList', {
     'open_tasks': OpenTaskCount(attribute='tasks'),
     'total_tasks': ValueCount(attribute='tasks'),
     'created_at': ISO8601(attribute='created_at'),
-    #'modified_at': ISO8601(attribute='modified_at'),
+    'modified_at': ISO8601(attribute='modified_at'),
     'created_by': fields.Nested(mod_user_list),
-    #'updated_by': fields.Nested(mod_user_list),
+    'updated_by': fields.Nested(mod_user_list),
     'observable_count': ValueCount(attribute='observables'),
     'close_reason': fields.Nested(mod_close_reason_list),
     #'case_template': fields.Nested(mod_case_template_brief)
@@ -863,7 +863,8 @@ mod_settings = Model('SettingsList', {
     'assign_case_on_create': fields.Boolean,
     'assign_task_on_start': fields.Boolean,
     'allow_comment_editing': fields.Boolean,
-    'events_page_refresh': fields.Integer
+    'events_page_refresh': fields.Integer,
+    'events_per_page': fields.Integer
 })
 
 mod_case_metrics = Model('CaseMetrics', {
@@ -957,7 +958,7 @@ mod_event_rule_list = Model('EventRuleList', {
     'expire': fields.Boolean,
     'active': fields.Boolean,
     'observables': fields.List(fields.Nested(mod_observable_list)),
-    'expire_at': fields.DateTime,
+    'expire_at': ISO8601(attribute='expire_at'),
     'created_at': ISO8601(attribute='created_at'),
     'created_by': fields.Nested(mod_user_list),
     'modified_at': ISO8601(attribute='modified_at')

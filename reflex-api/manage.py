@@ -79,96 +79,6 @@ def blacklist_token(token):
     blacklist = AuthTokenBlacklist(auth_token = token)
     blacklist.create()
 
-@manager.command
-def demo():
-
-    print("Adding demo data to the system")
-    
-    events = [
-        {
-            "title": "User added to local administrators group",
-            "reference": "event-1",
-            "description": "A user was added to the local administrators group, this is typically an operational security risk.",
-            "tags": [
-                "privilege",
-                "opsec",
-                "policy-violation"
-            ],
-            "tlp": 2,
-            "severity": 2,
-            "observables": [{
-                    "value": "REFLEX-001",
-                    "dataType": "host",
-                    "tlp": 2,
-                    "spotted": False,
-                    "safe": False,
-                    "ioc": False,
-                    "tags": [
-                        "source-host"
-                    ]
-                },
-                {
-                    "value": "netsurge",
-                    "dataType": "user",
-                    "tlp": 2,
-                    "spotted": False,
-                    "safe": False,
-                    "ioc": False,
-                    "tags": [
-                        "target-user"
-                    ]
-                },
-                {
-                    "value": "admin",
-                    "dataType": "user",
-                    "tlp": 2,
-                    "spotted": False,
-                    "safe": False,
-                    "ioc": False,
-                    "tags": [
-                        "source-user"
-                    ]
-                }
-            ],
-            "raw_log": "A member was added to a security-enabled local group.\n\nSubject:\n\n   Security ID:  REFLEX-0001\\Administrator\n   Account Name:  Administrator\n   Account Domain:  REFLEX-001\n   Logon ID:  0x1fd23\n\nMember:\n\n   Security ID:  REFLEX-001\netsurge\n   Account Name:  -\n\nGroup:\n\n   Security ID:  BUILTIN\\Users\n   Group Name:  Users\n   Group Domain:  Builtin\n\nAdditional Information:\n\n   Privileges:  -\n\n   Expiration time:  -"
-        },
-        {
-            "title": "Whoami command executed",
-            "reference": "event-2",
-            "description": "A user executed the whoami command, it's rare for normal users to run this command.",
-            "tags": [
-                "privilege",
-                "opsec",
-                "policy-violation"
-            ],
-            "tlp": 2,
-            "severity": 2,
-            "observables": [{
-                    "value": "REFLEX-001",
-                    "dataType": "host",
-                    "tlp": 2,
-                    "spotted": False,
-                    "safe": False,
-                    "ioc": False,
-                    "tags": [
-                        "source-host"
-                    ]
-                },
-                {
-                    "value": "netsurge",
-                    "dataType": "user",
-                    "tlp": 2,
-                    "spotted": False,
-                    "safe": False,
-                    "ioc": False,
-                    "tags": [
-                        "source-user"
-                    ]
-                }
-            ],
-            "raw_log": "A member was added to a security-enabled local group.\n\nSubject:\n\n   Security ID:  REFLEX-0001\\Administrator\n   Account Name:  Administrator\n   Account Domain:  REFLEX-001\n   Logon ID:  0x1fd23\n\nMember:\n\n   Security ID:  REFLEX-001\netsurge\n   Account Name:  -\n\nGroup:\n\n   Security ID:  BUILTIN\\Users\n   Group Name:  Users\n   Group Domain:  Builtin\n\nAdditional Information:\n\n   Privileges:  -\n\n   Expiration time:  -"
-        }
-    ]
 
 def create_org(name, description):
     print("Creating new organization %s" % name)
@@ -581,18 +491,20 @@ def create_agent_role(org):
 def create_default_observable_types(org):
     print("Creating default Observable Types for %s" % org.name)
     dataTypes = [
-        {'name': 'ip', 'description': 'IP Address', 'regex': '/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/'},
+        {'name': 'ip', 'description': 'IP Address', 'regex': r'/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/'},
         {'name': 'domain', 'description': 'A domain name'},
         {'name': 'fqdn', 'description': 'A fully qualified domain name of a host'},
         {'name': 'host', 'description': 'A host name'},
-        {'name': 'email', 'description': 'An e-mail address', 'regex': '/^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/'},
+        {'name': 'email', 'description': 'An e-mail address', 'regex': r'/^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/'},
         {'name': 'email_subject', 'description': 'An e-mail subject'},
-        {'name': 'md5hash', 'description': 'A MD5 hash', 'regex': '/[a-f0-9A-F]{32}/'},
-        {'name': 'sha1hash', 'description': 'A SHA1 hash', 'regex': '/[a-f0-9A-F]{40}/'},
-        {'name': 'sha256hash', 'description': 'A SHA256 hash', 'regex': '/[a-f0-9A-F]{64}/'},
+        {'name': 'md5hash', 'description': 'A MD5 hash', 'regex': r'/[a-f0-9A-F]{32}/'},
+        {'name': 'sha1hash', 'description': 'A SHA1 hash', 'regex': r'/[a-f0-9A-F]{40}/'},
+        {'name': 'sha256hash', 'description': 'A SHA256 hash', 'regex': r'/[a-f0-9A-F]{64}/'},
         {'name': 'user', 'description': 'A username'},
         {'name': 'command', 'description': 'A command that was executed'},
-        {'name': 'url', 'description': 'An address to a universal resource', 'regex': '/(http|https)\:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,3}(\/\S*)?/'}
+        {'name': 'url', 'description': 'An address to a universal resource', 'regex': r'/(http|https)\:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,3}(\/\S*)?/'},
+        {'name': 'imphash', 'description': 'A hash of a binaries import table'},
+        {'name': 'process', 'description': 'A process that was launched on a machine', r'regex':'^([A-Z]?[:\\\/]).*(\.\w{3,})?$'}
     ]
     for d in dataTypes:
         dt = DataType(**d)
