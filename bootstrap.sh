@@ -56,7 +56,7 @@ if [ ! -z "$install" ]; then
     SECURITY_PASSWORD_SALT=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 512 | head -n 1)
     echo "Installing reflex"
     if [[ "$os" == "ubuntu" ]]; then
-        apt install -y python3-pip git nginx
+        apt install -y python3-pip git nginx libpq-dev python3-dev
     fi
     mkdir -p /opt/reflex/reflex-api
     cd /opt/reflex/reflex-api
