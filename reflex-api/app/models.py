@@ -567,7 +567,20 @@ class User(Base):
         return _refresh_token
 
     def check_password(self, password):
+        '''
+        Tries to validate the users password against the 
+        local authentication database
+        '''
+
         return FLASK_BCRYPT.check_password_hash(self.password_hash, password)
+
+    def ldap_login(self, password):
+        ''' 
+        If configured in the organizations settings
+        will attempt to log the user in via LDAP
+        '''
+        
+        raise NotImplementedError
 
     def has_right(self, permission):
 
@@ -1020,6 +1033,7 @@ class Event(Base):
     case = db.relationship('Case', back_populates='events')
     raw_log = db.Column(db.JSON)
     signature = db.Column(db.String(255))
+    source = db.Column(db.String(255))
     dismiss_reason_uuid = db.Column(db.String(255), db.ForeignKey('close_reason.uuid'))
     dismiss_reason = db.relationship('CloseReason')
     dismiss_comment = db.Column(db.Text)

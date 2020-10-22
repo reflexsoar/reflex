@@ -385,6 +385,7 @@ mod_event_create = Model('EventCreate', {
     'tags': fields.List(fields.String),
     'tlp': fields.Integer,
     'severity': fields.Integer,
+    'source': fields.String,
     'observables': fields.List(fields.Nested(mod_observable_create)),
     'raw_log': fields.String
 })
@@ -416,6 +417,7 @@ mod_event_details = Model('EventDetails', {
     'tlp': fields.Integer,
     'severity': fields.Integer,
     'status': fields.Nested(mod_event_status),
+    'source': fields.String,
     'tags': fields.List(fields.Nested(mod_tag_list)),
     'observables': fields.List(fields.Nested(mod_observable_list)),
     'observable_count': ObservableCount(attribute='observables'),
@@ -459,6 +461,7 @@ mod_event_list = Model('EventList', {
     'tlp': fields.Integer,
     'severity': fields.Integer,
     'status': fields.Nested(mod_event_status),
+    'source': fields.String,
     'tags': fields.List(fields.Nested(mod_tag_list)),
     'observables': fields.List(fields.Nested(mod_observable_brief)),
     'observable_count': ObservableCount(attribute='observables'),
