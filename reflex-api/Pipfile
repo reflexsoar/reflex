@@ -27,6 +27,7 @@ pymysql = "*"
 sqlalchemy-filters = "*"
 gevent = "*"
 flask-mail = "*"
+cffi = "*"
 
 [requires]
 python_version = "3.8"
