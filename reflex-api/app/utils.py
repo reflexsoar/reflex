@@ -1,10 +1,17 @@
 import jwt
 import base64
 import datetime
+import smtplib
 import logging
 
 from flask import request, current_app, abort
 from .models import User, AuthTokenBlacklist, Agent
+
+def send_email(settings, to=[], from_mail="", message=""):
+    mail_server = settings.email_server.split(':')
+         
+    with smtplib.SMTP(mail_server[0], port=mail_server[1]) as server:
+        server.sendmail(from_mail, to, message.as_string())
 
 def generate_token(uuid, organization_uuid, duration=10, token_type='agent'):
     token_data = {
@@ -64,6 +71,32 @@ def _get_current_user():
     return current_user
 
 
+def check_password_reset_token(token):
+    '''
+    Checks the validity of a password reset token
+    '''
+
+    try:
+        decoded_token = jwt.decode(token, current_app.config['SECRET_KEY'])
+
+        blacklisted = AuthTokenBlacklist.query.filter_by(auth_token=token).first()
+        if blacklisted:
+            abort(401, 'Token retired.')
+
+        if 'type' in decoded_token and decoded_token['type'] == 'password_reset':
+            user = User.query.filter_by(uuid=decoded_token['uuid']).first()
+            return user
+        
+    except ValueError:
+        abort(401, 'Token retired.')
+    except jwt.ExpiredSignatureError:
+        abort(401, 'Access token expired.')
+    except (jwt.DecodeError, jwt.InvalidTokenError):
+        abort(401, 'Invalid access token.')
+    except Exception as e:
+        abort(401, str(e))
+
+
 def _check_token():
     ''' Check the validity of the token provided '''
 
@@ -80,9 +113,8 @@ def _check_token():
                 if 'type' in token and token['type'] == 'agent':
                     current_user = Agent.query.filter_by(uuid=token['uuid']).first()
 
-
                 # Refresh and Password Reset tokens should not be used to access the API
-                # only to refresh an access token
+                # only to refresh an access token or reset the password
                 elif 'type' in token and token['type'] in ['refresh','password_reset']:
                     abort(401, 'Unauthorized')
                     

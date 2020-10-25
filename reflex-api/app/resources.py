@@ -5,12 +5,14 @@ import jwt
 import copy
 import json
 import base64
+
 import hashlib
 import itertools
 import cryptography
+from email.mime.text import MIMEText
 from zipfile import ZipFile
 from flask_mail import Mail, Message
-from flask import request, current_app, abort, make_response, send_from_directory, send_file, Blueprint
+from flask import request, current_app, abort, make_response, send_from_directory, send_file, Blueprint, render_template
 from flask_restx import Api, Resource, Namespace, fields, Model, inputs as xinputs
 from sqlalchemy import or_
 from sqlalchemy_filters import apply_filters, apply_pagination, apply_sort, apply_loads
@@ -21,7 +23,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import desc, asc, func
 from sqlalchemy.orm import load_only
 from .models import User, UserGroup, db, RefreshToken, GlobalSettings, AuthTokenBlacklist, Role, CaseFile, Credential, CloseReason, Tag, List, ListValue, Permission, Playbook, Event, EventRule, Observable, DataType, Input, EventStatus, Agent, AgentRole, AgentGroup, Case, CaseTask, TaskNote, CaseHistory, CaseTemplate, CaseTemplateTask, CaseComment, CaseStatus, Plugin, PluginConfig, DataType, observable_case_association, case_tag_association
-from .utils import token_required, user_has, _get_current_user, generate_token
+from .utils import token_required, user_has, _get_current_user, generate_token, send_email, check_password_reset_token
 from .schemas import *
 
 api_v1 = Blueprint("api", __name__, url_prefix="/api/v1.0")
@@ -179,33 +181,49 @@ class ForgotPassword(Resource):
 
         user = User.query.filter_by(email=api.payload['email']).first()
         if user:
-            password_reset_token = user.create_password_reset_token(request.user_agent.string.encode('utf-8'))
             settings = GlobalSettings.query.filter_by(organization_uuid=user.organization_uuid).first()
 
             mail_user = Credential.query.filter_by(uuid=settings.email_secret_uuid).first()
-            mail_config = {
-                'MAIL_USE_TLS': True
-            }
-            if settings.email_server:
-                mail_config['MAIL_SERVER'] = settings.email_server
-                mail_config['MAIL_PORT'] = 587
+            msg = MIMEText(render_template('forgot_password.html', name=user.username, reset_link=settings.base_url+"/reset_password/"+user.create_password_reset_token()),'html')
+            msg['Subject'] = 'Reflex password reset request'
+            msg['From'] = settings.email_from
+            msg['To'] = user.email
 
-            if settings.email_from:
-                mail_config['MAIL_DEFAULT_SENDER'] = settings.email_from
-            #if mail_user:
-                #mail_config['MAIL_USERNAME'] = str(mail_user.username)
-                #mail_config['MAIL_PASSWORD'] = mail_user.decrypt(current_app.config['MASTER_PASSWORD'])
-
-
-            mail.init_mail(config=mail_config)
-            msg = Message('Hello',sender="jonsullpuss@gmail.com",recipients=['bcarroll@zeroonesecurity.com'])
-            mail.send(msg)
-
-            
-
-            # EMAIL THE THING
+            send_email(settings, [user.email], settings.email_from, msg)
 
         return {'message':'Initiated password reset sequence if user exists.'}
+
+
+@ns_auth.route("/reset_password/<token>")
+class ResetPassword(Resource):
+
+    @api.expect(mod_password_reset)
+    @api.response(200, 'Success')
+    def post(self, token):
+        """
+        Completes a password reset if the reset token has not been used yet
+        and is not expired
+        """
+        if token:
+            user = check_password_reset_token(token)
+            if user:
+                if 'password' in api.payload:
+                    try:
+                        user.password = api.payload['password']
+                        user.save()
+                        expired_token = AuthTokenBlacklist(auth_token = token)
+                        expired_token.create()
+                        return {'message':'Password successfully changed.'}
+                    except Exception as e:
+                        print(e)
+                        ns_auth.abort(400, 'An error occured while trying to reset the users password.')
+                else:
+                    ns_auth.abort(400, 'A new password is required.')
+            else:
+                ns_auth.abort(401, 'Token invalid or expired.')
+        else:
+            ns_auth.abort(400, 'A password reset token is required.')
+        return ""
 
 
 @ns_auth.route("/login")
@@ -451,7 +469,17 @@ class UserDetails(Resource):
                         del api.payload['email']
                     else:
                         ns_user.abort(409, 'Email already taken.')
+            
+            if 'password' in api.payload and not current_user().has_right('reset_user_password'):
+                print('not allowed homie')
+                api.payload.pop('password')
+            if 'password' in api.payload and current_user().has_right('reset_user_password'):
+                pw = api.payload.pop('password')
+                user.password = pw
+                user.save()
 
+            print(api.payload)
+            
             user.update(api.payload)
             return user
         else:

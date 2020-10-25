@@ -84,6 +84,10 @@ mod_user_create = Model('UserCreate', {
     'locked': fields.Boolean
 })
 
+mod_password_reset = Model('PasswordReset', {
+    'password': fields.String
+})
+
 mod_user_self = Model('UserSelf', {
     'uuid': fields.String,
     'username': fields.String,
@@ -1039,4 +1043,4 @@ schema_models = [mod_auth, mod_auth_success_token, mod_refresh_token, mod_user_f
                  mod_close_reason_create, mod_close_reason_list, mod_case_template_brief, mod_observable_list_paged,
                  mod_event_bulk_dismiss, mod_related_case, mod_forgot_password, mod_observable_brief, mod_case_file,
                  mod_case_file_upload, mod_case_file_upload_response, mod_case_file_list, mod_case_task_note, mod_case_task_note_complete,
-                 mod_paged_agent_group_list]
+                 mod_paged_agent_group_list, mod_password_reset]

@@ -532,10 +532,10 @@ class User(Base):
             and self.role.permissions.__dict__[k] == True
         ]
 
-    def create_password_reset_token(self, user_agent_string):
+    def create_password_reset_token(self):
         _token = jwt.encode({
             'uuid': self.uuid,
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=60),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30),
             'iat': datetime.datetime.utcnow(),
             'type': 'password_reset'
         }, current_app.config['SECRET_KEY']).decode('utf-8')
@@ -645,7 +645,7 @@ class RefreshToken(Base):
 
 class AuthTokenBlacklist(Base):
 
-    auth_token = db.Column(db.String(200))
+    auth_token = db.Column(db.Text)
 
 
 class Case(Base):
