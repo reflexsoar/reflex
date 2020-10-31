@@ -251,6 +251,7 @@ class auth(Resource):
                 request.user_agent.string.encode('utf-8'))
 
             user.last_logon = datetime.datetime.utcnow()
+            user.failed_logons = 0
             user.save()
 
             return {'access_token': _access_token, 'refresh_token': _refresh_token, 'user': user.uuid}, 200
@@ -2760,6 +2761,7 @@ event_list_parser.add_argument('title', type=str, location='args', action='split
 event_list_parser.add_argument('page', type=int, location='args', default=1, required=False)
 event_list_parser.add_argument('page_size', type=int, location='args', default=5, required=False)
 event_list_parser.add_argument('sort_by', type=str, location='args', default='created_at', required=False)
+event_list_parser.add_argument('sort_desc', type=xinputs.boolean, location='args', default=True, required=False)
 
 @ns_event.route("")
 class EventList(Resource):
@@ -2839,7 +2841,11 @@ class EventList(Resource):
         if args['search'] or (len(args['observables']) > 0 and not '' in args['observables']):
             base_query = base_query.join(observable_event_association).join(Observable)
 
-        base_query = base_query.order_by(desc(getattr(Event,sort_by)))        
+        # Bidirectional sorting
+        if args['sort_desc']:
+            base_query = base_query.order_by(desc(getattr(Event,sort_by)))
+        if not args['sort_desc']:
+            base_query = base_query.order_by(asc(getattr(Event,sort_by)))
 
         # Return the default view of grouped events
         if args['grouped']:
@@ -2955,8 +2961,30 @@ class EventList(Resource):
             ns_event.abort(409, 'Event already exists.')
 
 
+@ns_event.route("/bulk_delete")
+class EventBulkDelete(Resource):
+
+    @api.doc(security="Bearer")
+    @api.expect(mod_event_bulk)
+    @token_required
+    @user_has('delete_event')
+    def delete(self, current_user):
+        '''
+        Takes in a list of event uuids and deletes them all
+        '''
+
+        if 'events' in api.payload:
+            for uuid in api.payload['events']:
+                event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+                if event:
+                    event.delete()
+
+        return {'message': 'Sucessfully deleted events.'}
+
+
 @ns_event.route('/bulk_dismiss')
 class EventBulkUpdate(Resource):
+
     @api.doc(security="Bearer")
     @api.expect(mod_event_bulk_dismiss)
     @api.marshal_with(mod_event_details, as_list=True)
@@ -3284,6 +3312,15 @@ class AgentHeartbeat(Resource):
             agent.save()
             return {'message': 'Your heart still beats!'}
         else:
+            '''
+            If the agent can't be found, revoke the agent token
+            '''
+
+            auth_header = request.headers.get('Authorization')
+            access_token = auth_header.split(' ')[1]
+            token_blacklist = AuthTokenBlacklist(auth_token=access_token)
+            token_blacklist.create()
+            
             ns_agent.abort(400, 'Your heart stopped.')
 
 
@@ -3843,6 +3880,7 @@ class EncryptPassword(Resource):
 
     @api.doc(security="Bearer")
     @api.expect(mod_credential_create)
+    @api.marshal_with(mod_credential_full)
     @api.response('400', 'Successfully created credential.')
     @api.response('409', 'Credential already exists.')
     @token_required
@@ -3856,7 +3894,7 @@ class EncryptPassword(Resource):
             credential.encrypt(api.payload['secret'].encode(
             ), current_app.config['MASTER_PASSWORD'])
             credential.create()
-            return {'message': 'Successfully created credential.', 'uuid': credential.uuid}, 200
+            return credential
         else:
             ns_credential.abort(409, 'Credential already exists.')
 
@@ -3923,15 +3961,21 @@ class DeletePassword(Resource):
     @user_has('update_credential')
     def put(self, uuid, current_user):
         ''' Updates a credential '''
+        print(api.payload)
         credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
         if credential:
-            if 'name' in api.payload and Credential.query.filter_by(name=api.payload['name']).first():
-                ns_credential.abort(409, 'Credential name already exists.')
-            else:
-                credential.encrypt(api.payload['secret'].encode(
-                ), current_app.config['MASTER_PASSWORD'])
+            cred = Credential.query.filter_by(name=api.payload['name']).first()
+            if cred:
+                if 'name' in api.payload and cred.uuid != uuid:
+                    ns_credential.abort(409, 'Credential name already exists.')
+            
+            if 'secret' in api.payload:
+                credential.encrypt(api.payload.pop('secret').encode(
+                                    ), current_app.config['MASTER_PASSWORD'])
                 credential.save()
-                return credential
+            credential.update(api.payload)
+            credential.save()
+            return credential
         else:
             ns_credential.abort(404, 'Credential not found.')
 
