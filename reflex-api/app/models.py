@@ -1070,9 +1070,18 @@ class Event(Base):
         load_spec = [{'model':'Event','fields':['uuid']}]
         filtered_query = apply_filters(query, filter_spec)
         filtered_query = apply_loads(filtered_query, load_spec)
-        events = filtered_query.all()
-        self.__dict__['new_related_events'] = [e.uuid for e in events if e.status.name == 'New']
-        self.__dict__['related_events_count'] = len(events)
+        self.__dict__['related_events_count'] = filtered_query.count()
+
+        query = db.session.query(Event)
+        filter_spec = [
+            {'model':'Event', 'field': 'signature', 'value': self.signature, 'op': 'eq'},
+            {'model':'EventStatus', 'field': 'name', 'value': 'New', 'op': 'eq'}
+        ]
+        load_spec = [{'model':'Event','fields':['uuid']}]
+        filtered_query = apply_filters(query, filter_spec)
+        filtered_query = apply_loads(filtered_query, load_spec)
+        self.__dict__['new_related_events'] = filtered_query.count()
+         
 
 class EventStatus(Base):
 
