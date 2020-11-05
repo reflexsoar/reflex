@@ -1208,7 +1208,9 @@ class RelateCases(Resource):
             if 'cases' in api.payload:
                 _cases = api.payload.pop('cases')
                 case.related_cases = [c for c in case.related_cases if c.uuid not in _cases]
+                case.parent_cases = [c for c in case.parent_cases if c.uuid not in _cases]
                 case.save()
+
         _cases =  case.related_cases+case.parent_cases
         return _cases
 
@@ -1324,12 +1326,16 @@ class CaseDetails(Resource):
                             for event in case.events:
                                 event.status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, name='Closed', closed=True).first()
                                 event.save()
+                            
+                            case.closed = True
                         
                         # If the case is being re-opened
                         if(case.status.closed and not status.closed):
                             for event in case.events:
                                 event.status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, name='Open', closed=False).first()
                                 event.save()
+                                
+                            case.closed = False
 
                     elif f == 'severity':
                         value = {1: 'Low', 2: 'Medium', 3: 'High',
@@ -1415,10 +1421,6 @@ class CaseDetails(Resource):
                         case.add_history(message=message)
 
             case.update(api.payload)
-
-
-            
-
 
             return case
         else:
@@ -2727,7 +2729,7 @@ class CreateBulkEvents(Resource):
                             if rule.merge_into_case:
                                 add_event_to_case(rule.target_case_uuid, event.uuid, current_user().organization_uuid)
                         else:
-                            continue                            
+                            continue
 
                 end_event_process_dt = datetime.datetime.utcnow().timestamp()
 
@@ -3090,6 +3092,9 @@ class EventRuleList(Resource):
     @user_has('create_event_rule')
     def post(self, current_user):
         ''' Creates a new event_rule set '''
+
+        if 'expire_days' in api.payload and not isinstance(api.payload['expire_days'], int):
+            ns_event_rule(400, 'expire_days should be an integer.')
 
         # Computer when the rule should expire
         if 'expire' in api.payload and api.payload['expire']:

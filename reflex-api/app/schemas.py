@@ -1,5 +1,8 @@
 from flask_restx import Model, fields
 
+class RenamedField(fields.Raw):
+    def format(self, value):
+        return value
 
 class ValueCount(fields.Raw):
     def format(self, value):
@@ -766,6 +769,7 @@ mod_case_list = Model('CaseList', {
     'updated_by': fields.Nested(mod_user_list),
     'observable_count': ValueCount(attribute='observables'),
     'close_reason': fields.Nested(mod_close_reason_list),
+    'closed': RenamedField(attribute='_closed')
     #'case_template': fields.Nested(mod_case_template_brief)
 })
 
