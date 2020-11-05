@@ -428,7 +428,10 @@ def create_analyst(org):
         'view_settings': True,
         'upload_case_files': True,
         'view_case_files': True,
-        'delete_case_files': True
+        'delete_case_files': True,
+        "create_event_rule": True,
+        "update_event_rule": True,
+        "delete_event_rule": True,
     }
 
     permissions = Permission(**perms)
