@@ -12,6 +12,7 @@ from sqlalchemy.orm import validates
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.hybrid import hybrid_method
 from sqlalchemy.dialects.mysql import LONGTEXT
+from sqlalchemy_filters import apply_loads, apply_filters
 from cryptography.fernet import Fernet
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -1060,6 +1061,18 @@ class Event(Base):
         self.save()
         return
 
+    def load_related_events(self):
+        ''' 
+        Searches the database for all related events
+        '''
+        query = db.session.query(Event)
+        filter_spec = [{'model':'Event', 'field': 'signature', 'value': self.signature, 'op': 'eq'}]
+        load_spec = [{'model':'Event','fields':['uuid']}]
+        filtered_query = apply_filters(query, filter_spec)
+        filtered_query = apply_loads(filtered_query, load_spec)
+        events = filtered_query.all()
+        self.__dict__['new_related_events'] = [e.uuid for e in events if e.status.name == 'New']
+        self.__dict__['related_events_count'] = len(events)
 
 class EventStatus(Base):
 
