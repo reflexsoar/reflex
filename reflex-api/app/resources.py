@@ -2758,10 +2758,10 @@ event_list_parser.add_argument('signature', location='args', required=False)
 event_list_parser.add_argument('severity', action='split', location='args', required=False)
 event_list_parser.add_argument('grouped', type=xinputs.boolean, location='args', required=False)
 event_list_parser.add_argument('case_uuid', type=str, location='args', required=False)
-event_list_parser.add_argument('search', type=str, location='args', required=False)
+event_list_parser.add_argument('search', type=str, action='split', location='args', required=False)
 event_list_parser.add_argument('title', type=str, location='args', action='split', required=False)
 event_list_parser.add_argument('page', type=int, location='args', default=1, required=False)
-event_list_parser.add_argument('page_size', type=int, location='args', default=5, required=False)
+event_list_parser.add_argument('page_size', type=int, location='args', default=10, required=False)
 event_list_parser.add_argument('sort_by', type=str, location='args', default='created_at', required=False)
 event_list_parser.add_argument('sort_desc', type=xinputs.boolean, location='args', default=True, required=False)
 
@@ -2788,7 +2788,7 @@ class EventList(Resource):
 
         # Restrict what fields we can filter by
         sort_by = args['sort_by']
-        if sort_by not in ['created_at','modified_at', 'severity', 'name', 'tlp']:
+        if sort_by not in ['created_at','modified_at', 'severity', 'title', 'tlp']:
             sort_by = 'created_at'
 
         # Add the signature if we pass it
@@ -2798,7 +2798,12 @@ class EventList(Resource):
      
         # Check if any of the observables are in the list (case sensitive)
         if len(args['observables']) > 0 and not '' in args['observables']:
-            filter_spec.append({'field':'value', 'op': 'in', 'model':'Observable','value':args['observables']})
+            obs = {
+                'or': []
+            }
+            for o in args['observables']:
+                obs['or'].append({'field':'value', 'op': 'eq', 'model':'Observable','value':o})
+            filter_spec.append(obs)
 
         # Check if any of the tags are in the list (case sensitive)
         if len(args['tags']) > 0 and not '' in args['tags']:
@@ -2815,15 +2820,20 @@ class EventList(Resource):
             filter_spec.append({'model':'Event', 'field':'case_uuid', 'op':'eq', 'value': args['case_uuid']})
 
         if args['search']:
-            filter_spec.append({
-                'or': [
-                    {'model':'Event', 'field':'title', 'op':'ilike', 'value':'%{}%'.format(args['search'])},
-                    {'model':'Event', 'field':'reference', 'op':'ilike', 'value':'%{}%'.format(args['search'])},
-                    {'model':'Event', 'field':'signature', 'op':'ilike', 'value':'%{}%'.format(args['search'])},
-                    {'model':'Observable', 'field':'value', 'op':'ilike', 'value':'%{}%'.format(args['search'])},
-                    {'model':'Tag', 'field':'name', 'op':'ilike', 'value':'%{}%'.format(args['search'])}
-                ]
-            })
+            searches = {
+                'or': []
+            }
+            for s in args['search']:
+                searches['or'].append({
+                    'or': [
+                        {'model':'Event', 'field':'title', 'op':'ilike', 'value':'%{}%'.format(s)},
+                        {'model':'Event', 'field':'reference', 'op':'ilike', 'value':'%{}%'.format(s)},
+                        {'model':'Event', 'field':'signature', 'op':'ilike', 'value':'%{}%'.format(s)},
+                        {'model':'Observable', 'field':'value', 'op':'ilike', 'value':'%{}%'.format(s)},
+                        {'model':'Tag', 'field':'name', 'op':'ilike', 'value':'%{}%'.format(s)}
+                    ]
+                })
+            filter_spec.append(searches)
 
         new_event_count_filter = copy.deepcopy(filter_spec)
         new_event_count_filter.append({'model':'EventStatus', 'field':'name', 'op': 'eq', 'value': 'New'})
@@ -2874,7 +2884,6 @@ class EventList(Resource):
             filtered_query = apply_filters(query, filter_spec)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
             events = filtered_query.all()
-            
             response = {
                 'events': events,
                 'pagination': {
@@ -3001,6 +3010,7 @@ class EventBulkUpdate(Resource):
 
         return _events
 
+
 @ns_event.route("/<uuid>")
 class EventDetails(Resource):
 
@@ -3057,6 +3067,35 @@ class EventDetails(Resource):
             event.delete()
             return {'message': 'Sucessfully deleted event.'}
 
+
+@ns_event.route("/<uuid>/new_related_events")
+class EventNewRelatedEvents(Resource): 
+
+    @api.doc(security="Bearer")
+    @api.marshal_with(mod_related_events)
+    @api.response('200', 'Success')
+    @api.response('404', 'Event not found')
+    @token_required
+    @user_has('view_events')
+    def get(self, current_user, uuid):
+        ''' Returns the UUIDs of all related events that are Open '''
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        if event:
+            query = db.session.query(Event)
+            filter_spec = [
+                {'model':'Event', 'field': 'signature', 'value': event.signature, 'op': 'eq'},
+                {'model':'EventStatus', 'field': 'name', 'value': 'New', 'op': 'eq'}
+            ]
+            load_spec = [{'model':'Event','fields':['uuid']}]
+            filtered_query = apply_filters(query, filter_spec)
+            filtered_query = apply_loads(filtered_query, load_spec)
+            events = filtered_query.all()
+            if events:
+                return {'events': [e.uuid for e in events]}
+            else:
+                return []
+        else:
+            ns_event.abort(404, 'Event not found')
 
 @ns_event_rule.route("")
 class EventRuleList(Resource):
