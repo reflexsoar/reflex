@@ -466,6 +466,7 @@ mod_observable_brief = Model('ShortObservableDetails', {
 })
 
 mod_event_list = Model('EventList', {
+    'id': fields.Integer,
     'uuid': fields.String,
     'title': fields.String(required=True),
     'reference': fields.String(required=True),
@@ -483,8 +484,7 @@ mod_event_list = Model('EventList', {
     'case_uuid': fields.String,
     'signature': fields.String,
     'related_events_count': fields.Integer,
-    'dismiss_reason': fields.Nested(mod_close_reason_list),
-    'new_related_events': fields.Integer
+    'dismiss_reason': fields.Nested(mod_close_reason_list)
 })
 
 mod_related_events = Model('RelatedEvents', {

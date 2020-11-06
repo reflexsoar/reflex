@@ -23,7 +23,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import desc, asc, func, case, distinct
 from sqlalchemy.orm import load_only
 from .models import User, UserGroup, db, RefreshToken, GlobalSettings, AuthTokenBlacklist, Role, CaseFile, Credential, CloseReason, Tag, List, ListValue, Permission, Playbook, Event, EventRule, Observable, DataType, Input, EventStatus, Agent, AgentRole, AgentGroup, Case, CaseTask, TaskNote, CaseHistory, CaseTemplate, CaseTemplateTask, CaseComment, CaseStatus, Plugin, PluginConfig, DataType, observable_case_association, case_tag_association
-from .utils import token_required, user_has, _get_current_user, generate_token, send_email, check_password_reset_token
+from .utils import token_required, user_has, _get_current_user, generate_token, send_email, check_password_reset_token, build_search_filters
 from .schemas import *
 
 api_v1 = Blueprint("api", __name__, url_prefix="/api/v1.0")
@@ -2868,6 +2868,7 @@ class EventList(Resource):
         if args['grouped']:
             query = base_query.group_by(Event.signature)
             filtered_query = apply_filters(query, filter_spec)
+            print(filtered_query)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
             results = filtered_query.all()
             events = []
@@ -2973,28 +2974,106 @@ class EventList(Resource):
         else:
             ns_event.abort(409, 'Event already exists.')
 
-"""
+from app import cache
+
+
+
+
+test_parser = api.parser()
+test_parser.add_argument('limit', location='args', default=25, type=int, required=True)
+test_parser.add_argument('next', location='args', default=None, type=str, required=False)
+test_parser.add_argument('prev', location='args', default=None, type=str, required=False)
+test_parser.add_argument('signature', location='args', default=None, type=str, required=False)
+test_parser.add_argument('sort_by', location='args', default='created_at', type=str, required=False)
+test_parser.add_argument('title', location='args', type=str, required=False)
+test_parser.add_argument('tlp', location='args', type=str, required=False)
+test_parser.add_argument('observable_filter', location='args', default=[], type=str, action='split', required=False)
+test_parser.add_argument('filter', location='args', default=[], type=str, action='split', required=False)
+
 @ns_event.route('/test_query')
 class EventTestQuery(Resource):
 
-    @api.marshal_with(mod_event_list)
-    def get(self):
+    #@cache.cached(timeout=60, query_string=True)
+    @api.doc(security="Bearer")
+    @api.marshal_with(mod_paged_event_list, as_list=True)
+    @api.expect(test_parser)
+    @token_required
+    @user_has('view_events')
+    def get(self, current_user):
 
-        start = datetime.datetime.utcnow()
+        from sqlakeyset import get_page
 
-        base_query = db.session.query(Event,func.count(Event.id).label('_related_events_count')).join(EventStatus).group_by(Event.signature).limit(1000).offset(0)
-        results = base_query.all()
-        _events = []
-        for result in results:
-            event = result[0]
-            event.__dict__['related_events_count'] = result[1]
-            _events.append(event)
-            
+        start = datetime.datetime.utcnow().timestamp()
 
-        end = datetime.datetime.utcnow()
-        print(end-start)
-        return _events
-"""
+        # Parse the arguments
+        args = test_parser.parse_args()
+
+        if args['next']:
+            bookmark = base64.urlsafe_b64decode(args['next']).decode()
+        else:
+            bookmark = None
+
+        if args['prev'] and args['next']:
+            bookmark = base64.urlsafe_b64decode(args['next']).decode()
+        elif args['next']:
+            bookmark = base64.urlsafe_b64decode(args['next']).decode()
+        elif args['prev']:
+            bookmark = base64.urlsafe_b64decode(args['prev']).decode()
+
+        query_start = datetime.datetime.utcnow().timestamp()
+
+        # change the query if we are doing an event signature deep dive
+        if args['signature'] and not args['signature'].startswith('!'):
+            base_query = db.session.query(Event)
+        else:
+            base_query = db.session.query(Event, func.count(distinct(Event.uuid).label('related_events_count'))).outerjoin(EventStatus).group_by(Event.signature)
+
+        # User filters
+        user_filters = [
+            {'model':'Event','field':'organization_uuid','value':current_user().organization_uuid,'op':'eq'}
+        ]
+
+        base_query = apply_filters(base_query, user_filters)
+        
+        # Build single value filters
+        
+        base_query = apply_filters(base_query, build_search_filters(args,'Event'))
+
+        # change the sort order based on the sort_order parameter
+        if args['sort_by'].startswith('-'):
+            sort_by = args['sort_by'].replace('-','')
+            base_query = base_query.order_by(getattr(Event,sort_by).asc(), Event.id)
+        else:
+            base_query = base_query.order_by(getattr(Event,args['sort_by']).desc(), Event.id)
+
+        query_end = datetime.datetime.utcnow().timestamp()
+        print("Query Time: {}".format(query_end - query_start))
+        page = get_page(base_query, per_page=args['limit'], page=bookmark)
+
+        if args['signature'] and not args['signature'].startswith('!'):
+            _events = page
+        else:
+            _events = []
+            for result in page:
+                event = result[0]
+                event.__dict__['related_events_count'] = result[1]
+                _events.append(event)
+
+        next_bookmark = base64.urlsafe_b64encode(page.paging.bookmark_next.encode()).decode()
+        prev_bookmark = base64.urlsafe_b64encode(page.paging.bookmark_previous.encode()).decode()
+        response = {
+            'events': _events,
+            'pagination': {
+                'next': next_bookmark,
+                'previous': prev_bookmark
+            }
+        }        
+
+        end = datetime.datetime.utcnow().timestamp()
+        print("Request End: {}".format(end-start))
+        
+        return response
+
 
 @ns_event.route("/bulk_delete")
 class EventBulkDelete(Resource):

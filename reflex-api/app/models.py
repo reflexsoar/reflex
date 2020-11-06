@@ -177,9 +177,9 @@ class Base(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     uuid = db.Column(db.String(255), unique=True, default=generate_uuid)
-    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.utcnow, nullable=False)
     modified_at = db.Column(db.DateTime, default=datetime.datetime.utcnow,
-                            onupdate=datetime.datetime.utcnow)
+                            onupdate=datetime.datetime.utcnow, nullable=False)
     # TODO : Extend created_by
     # TODO : Extend updated_by
 
