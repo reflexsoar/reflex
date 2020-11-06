@@ -20,7 +20,7 @@ from flask_socketio import emit
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import desc, asc, func
+from sqlalchemy import desc, asc, func, case, distinct
 from sqlalchemy.orm import load_only
 from .models import User, UserGroup, db, RefreshToken, GlobalSettings, AuthTokenBlacklist, Role, CaseFile, Credential, CloseReason, Tag, List, ListValue, Permission, Playbook, Event, EventRule, Observable, DataType, Input, EventStatus, Agent, AgentRole, AgentGroup, Case, CaseTask, TaskNote, CaseHistory, CaseTemplate, CaseTemplateTask, CaseComment, CaseStatus, Plugin, PluginConfig, DataType, observable_case_association, case_tag_association
 from .utils import token_required, user_has, _get_current_user, generate_token, send_email, check_password_reset_token
@@ -2844,7 +2844,13 @@ class EventList(Resource):
 
         # Import our association tables, many-to-many doesn't have parent/child keys
         from .models import event_tag_association, observable_event_association
-        base_query = db.session.query(Event)
+        base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count'))
+
+        if not args['grouped']:
+            base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count'))
+
+        if args['signature']:
+            base_query = db.session.query(Event)
         
         if args['search'] or (len(args['tags']) > 0 and not '' in args['tags']):
             base_query = base_query.join(event_tag_association).join(Tag)
@@ -2863,9 +2869,12 @@ class EventList(Resource):
             query = base_query.group_by(Event.signature)
             filtered_query = apply_filters(query, filter_spec)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
-            events = filtered_query.all()
-            for event in events:
-                event.load_related_events()
+            results = filtered_query.all()
+            events = []
+            for result in results:
+                event = result[0]
+                event.__dict__['related_events_count'] = result[1]
+                events.append(event)
 
             response = {
                 'events': events,
@@ -2876,6 +2885,7 @@ class EventList(Resource):
                     'page_size': pagination.page_size
                     }
                 }
+
             return response
 
         # Return an ungrouped list of a signatures events
@@ -2884,6 +2894,7 @@ class EventList(Resource):
             filtered_query = apply_filters(query, filter_spec)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
             events = filtered_query.all()
+
             response = {
                 'events': events,
                 'pagination': {
@@ -2893,13 +2904,19 @@ class EventList(Resource):
                     'page_size': pagination.page_size
                     }
                 }
+
             return response
 
         else:
             query = base_query
             filtered_query = apply_filters(query, filter_spec)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
-            events = filtered_query.all()
+            results = filtered_query.all()
+            events = []
+            for result in results:
+                event = result[0]
+                event.__dict__['related_events_count'] = result[1]
+                events.append(event)
             response = {
                 'events': events,
                 'pagination': {
@@ -2909,6 +2926,7 @@ class EventList(Resource):
                     'page_size': pagination.page_size
                     }
                 }
+
             return response
 
 
@@ -2955,6 +2973,28 @@ class EventList(Resource):
         else:
             ns_event.abort(409, 'Event already exists.')
 
+"""
+@ns_event.route('/test_query')
+class EventTestQuery(Resource):
+
+    @api.marshal_with(mod_event_list)
+    def get(self):
+
+        start = datetime.datetime.utcnow()
+
+        base_query = db.session.query(Event,func.count(Event.id).label('_related_events_count')).join(EventStatus).group_by(Event.signature).limit(1000).offset(0)
+        results = base_query.all()
+        _events = []
+        for result in results:
+            event = result[0]
+            event.__dict__['related_events_count'] = result[1]
+            _events.append(event)
+            
+
+        end = datetime.datetime.utcnow()
+        print(end-start)
+        return _events
+"""
 
 @ns_event.route("/bulk_delete")
 class EventBulkDelete(Resource):

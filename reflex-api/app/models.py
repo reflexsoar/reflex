@@ -1060,28 +1060,7 @@ class Event(Base):
         self.signature = hasher.hexdigest()
         self.save()
         return
-
-    def load_related_events(self):
-        ''' 
-        Searches the database for all related events
-        '''
-        query = db.session.query(Event)
-        filter_spec = [{'model':'Event', 'field': 'signature', 'value': self.signature, 'op': 'eq'}]
-        load_spec = [{'model':'Event','fields':['uuid']}]
-        filtered_query = apply_filters(query, filter_spec)
-        filtered_query = apply_loads(filtered_query, load_spec)
-        self.__dict__['related_events_count'] = filtered_query.count()
-
-        query = db.session.query(Event)
-        filter_spec = [
-            {'model':'Event', 'field': 'signature', 'value': self.signature, 'op': 'eq'},
-            {'model':'EventStatus', 'field': 'name', 'value': 'New', 'op': 'eq'}
-        ]
-        load_spec = [{'model':'Event','fields':['uuid']}]
-        filtered_query = apply_filters(query, filter_spec)
-        filtered_query = apply_loads(filtered_query, load_spec)
-        self.__dict__['new_related_events'] = filtered_query.count()
-         
+        
 
 class EventStatus(Base):
 
