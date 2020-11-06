@@ -152,3 +152,49 @@ def _check_token():
     else:
         abort(403, 'Access token required.')
     return current_user
+
+
+def build_search_filters(args,model='Event'):
+    '''
+    Creates a sqlalchemy-filter spec that can be applied
+    to a base query for the sake of filtering
+    '''
+
+    operators = {
+        '!': 'ne',
+        '>': 'gt',
+        '>:': 'ge',
+        '<': 'lt',
+        '<:': 'le',
+        '~': 'ilike',
+        '-~': 'not_ilike'
+    }
+
+    url_operators = ['!','>','<','~','>:','<:','-~']
+
+    filters = []
+
+    for key in args:
+        if key in ['signature','title','tlp','severity','source','reference']:
+            if args[key]:
+                data = args[key]
+                op = list(filter(data.startswith, url_operators))
+                if op != []:
+                    operation = operators[op[0]]
+                    data = data.replace(op[0],'')
+                else:
+                    operation = 'eq'
+
+                filter_spec = {
+                    'model': model,
+                    'field': key,
+                    'value': data,
+                    'op': operation
+                }
+
+                # Fuzzy matching
+                if operation in ['ilike','not_ilike']:
+                    filter_spec['value'] = '%{}%'.format(data)
+                
+                filters.append(filter_spec)
+    return filters
