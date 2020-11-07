@@ -2819,7 +2819,6 @@ class EventList(Resource):
         if args['case_uuid']:
             filter_spec.append({'model':'Event', 'field':'case_uuid', 'op':'eq', 'value': args['case_uuid']})
 
-	"""
         if args['search'] and args['search'] != '':
             searches = {
                 'or': []
@@ -2835,7 +2834,6 @@ class EventList(Resource):
                     ]
                 })
             filter_spec.append(searches)
-	"""
 
         new_event_count_filter = copy.deepcopy(filter_spec)
         new_event_count_filter.append({'model':'EventStatus', 'field':'name', 'op': 'eq', 'value': 'New'})
