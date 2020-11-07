@@ -2819,7 +2819,7 @@ class EventList(Resource):
         if args['case_uuid']:
             filter_spec.append({'model':'Event', 'field':'case_uuid', 'op':'eq', 'value': args['case_uuid']})
 
-        if args['search']:
+        if args['search'] and args['search'] != '':
             searches = {
                 'or': []
             }
