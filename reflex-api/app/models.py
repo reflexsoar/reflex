@@ -660,7 +660,7 @@ class Case(Base):
     tlp = db.Column(db.Integer, default=2)
     observables = db.relationship(
         'Observable', secondary=observable_case_association, cascade='delete, save-update')
-    events = db.relationship('Event', back_populates='case')
+    events = db.relationship('Event', back_populates='case', lazy="joined")
     tags = db.relationship('Tag', secondary=case_tag_association)
     status_uuid = db.Column(db.String(255), db.ForeignKey('case_status.uuid'))
     status = db.relationship("CaseStatus")
@@ -974,7 +974,7 @@ class EventRule(Base):
 
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
-    event_signature = db.Column(db.String(255)) # The hash of the original event this rule was created against
+    event_signature = db.Column(db.String(255)) # The title of the event that this was created from
     rule_signature = db.Column(db.String(255)) # A hash of the title + user customized observable values
     target_case_uuid = db.Column(db.String(255)) # The target case to merge this into if merge into case is selected
     observables = db.relationship('Observable', secondary=observable_event_rule_association)
@@ -1010,8 +1010,11 @@ class EventRule(Base):
     def hash_target_observables(self, target_observables):
         hasher = hashlib.md5()
         obs = []
+        expected_observables = [{'dataType':obs.dataType.name.lower(), 'value':obs.value} for obs in self.observables]
         for observable in target_observables:
-            obs.append({'dataType': observable.dataType.name.lower(), 'value': observable.value.lower()})
+            obs_dict = {'dataType': observable.dataType.name.lower(), 'value': observable.value.lower()}
+            if obs_dict in expected_observables:
+                obs.append(obs_dict)
         obs = [dict(t) for t in {tuple(d.items()) for d in obs}] # Deduplicate the observables
         obs = sorted(sorted(obs, key = lambda i: i['dataType']), key = lambda i: i['value'])             
         hasher.update(str(obs).encode())
@@ -1026,10 +1029,10 @@ class Event(Base):
     tlp = db.Column(db.Integer, default=2)
     severity = db.Column(db.Integer, default=2)
     status_id = db.Column(db.String(255), db.ForeignKey('event_status.uuid'))
-    status = db.relationship("EventStatus")
+    status = db.relationship("EventStatus", lazy="joined")
     observables = db.relationship(
-        'Observable', secondary=observable_event_association)
-    tags = db.relationship('Tag', secondary=event_tag_association)
+        'Observable', secondary=observable_event_association, lazy="joined")
+    tags = db.relationship('Tag', secondary=event_tag_association, lazy="joined")
     case_uuid = db.Column(db.String(255), db.ForeignKey('case.uuid'))
     case = db.relationship('Case', back_populates='events')
     raw_log = db.Column(db.JSON)
@@ -1102,7 +1105,7 @@ class Observable(Base):
 
     value = db.Column(db.Text)
     dataType_id = db.Column(db.String(255), db.ForeignKey('data_type.uuid'))
-    dataType = db.relationship("DataType")
+    dataType = db.relationship("DataType", lazy="joined")
     tlp = db.Column(db.Integer)
     tags = db.relationship('Tag', secondary=observable_tag_association)
     ioc = db.Column(db.Boolean, default=False)

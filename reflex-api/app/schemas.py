@@ -484,6 +484,7 @@ mod_event_list = Model('EventList', {
     'case_uuid': fields.String,
     'signature': fields.String,
     'related_events_count': fields.Integer,
+    'related_events': fields.List(fields.String),
     'dismiss_reason': fields.Nested(mod_close_reason_list)
 })
 
