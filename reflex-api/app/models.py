@@ -1003,7 +1003,7 @@ class EventRule(Base):
     def hash_target_observables(self, target_observables):
         hasher = hashlib.md5()
         obs = []
-        expected_observables = [{'dataType':obs.dataType.name.lower(), 'value':obs.value} for obs in self.observables]
+        expected_observables = [{'dataType':obs.dataType.name.lower(), 'value':obs.value.lower()} for obs in self.observables]
         for observable in target_observables:
             obs_dict = {'dataType': observable.dataType.name.lower(), 'value': observable.value.lower()}
             if obs_dict in expected_observables:

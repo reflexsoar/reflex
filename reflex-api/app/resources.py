@@ -2618,7 +2618,6 @@ def add_event_to_case(case_uuid, event_uuid, organization_uuid):
     case = Case.query.filter_by(uuid=case_uuid, organization_uuid=organization_uuid).first()
     if case:
         case_observables = [observable.value.lower() for observable in case.observables]
-        print("CASE OBSERVABLES", case_observables)
         
         _event_observables = []
         event = Event.query.filter_by(uuid=event_uuid, organization_uuid=organization_uuid).first()
@@ -2629,7 +2628,6 @@ def add_event_to_case(case_uuid, event_uuid, organization_uuid):
                 return False
             _event_observables += [observable for observable in event.observables]
             new_observables = [observable for observable in _event_observables if observable.value.lower() not in case_observables]
-            print("NEW:", new_observables)
             case.observables += new_observables
             event.status = EventStatus.query.filter_by(name='Open', organization_uuid=organization_uuid).first()
             case.events.append(event)
