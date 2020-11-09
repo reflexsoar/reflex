@@ -1118,27 +1118,13 @@ class AddEventsToCase(Resource):
             if 'events' in api.payload:
                 for evt in api.payload['events']:
                     _event_observables = []
-                    event = Event.query.filter_by(uuid=evt, organization_uuid=current_user.organization.uuid).first()
-                    if event:
 
-                        # If the event is already imported into another case
-                        # skip the case
-                        if event.case_uuid:
-                            response['results'].append({'reference': evt, 'message': 'Event already merged in a different Case.'})
-                            continue
-                        try:
-                            _event_observables += [observable for observable in event.observables]
-                            new_observables += [observable for observable in _event_observables if observable.value.lower() not in [o.value.lower() for o in case.observables if o not in new_observables]]
-                            event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user.organization.uuid).first()
-                            case.events.append(event)
-                            case.save()
-                            response['results'].append({'reference': evt, 'message': 'Event successfully merged into Case.'})
-                        except Exception as e:
-                            response['results'].append({'reference': evt, 'message': 'An error occurred while processing event observables. {}'.format(e)})
-                            response['success'] = False
+
+                    added = add_event_to_case(case.uuid, evt, current_user.organization_uuid)
+                    if added:
+                        response['results'].append({'reference': evt, 'message': 'Event successfully merged into Case.'})
                     else:
-                        response['results'].append({'reference': evt, 'message': 'Event not found.'})
-                        response['success'] = False
+                        response['results'].append({'reference': evt, 'message': 'Event already merged in a different Case or an error occurred'})
 
                 case.observables += new_observables
                 case.save()
@@ -2632,6 +2618,7 @@ def add_event_to_case(case_uuid, event_uuid, organization_uuid):
     case = Case.query.filter_by(uuid=case_uuid, organization_uuid=organization_uuid).first()
     if case:
         case_observables = [observable.value.lower() for observable in case.observables]
+        print("CASE OBSERVABLES", case_observables)
         
         _event_observables = []
         event = Event.query.filter_by(uuid=event_uuid, organization_uuid=organization_uuid).first()
@@ -2642,6 +2629,7 @@ def add_event_to_case(case_uuid, event_uuid, organization_uuid):
                 return False
             _event_observables += [observable for observable in event.observables]
             new_observables = [observable for observable in _event_observables if observable.value.lower() not in case_observables]
+            print("NEW:", new_observables)
             case.observables += new_observables
             event.status = EventStatus.query.filter_by(name='Open', organization_uuid=organization_uuid).first()
             case.events.append(event)
@@ -2847,6 +2835,12 @@ class EventList(Resource):
 
         if args['signature']:
             base_query = db.session.query(Event).options(joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason))
+
+        if args['search'] or (len(args['tags']) > 0 and not '' in args['tags']):
+            base_query = base_query.join(event_tag_association).join(Tag)
+
+        if args['search'] or (len(args['observables']) > 0 and not '' in args['observables']):
+            base_query = base_query.join(observable_event_association).join(Observable)
         
         # Bidirectional sorting
         if args['sort_desc']:
