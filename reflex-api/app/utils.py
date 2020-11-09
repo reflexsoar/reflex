@@ -5,7 +5,9 @@ import smtplib
 import logging
 
 from flask import request, current_app, abort
-from .models import User, AuthTokenBlacklist, Agent
+from sqlalchemy.orm import joinedload, subqueryload, load_only
+from .models import User, AuthTokenBlacklist, Agent, Role
+
 
 def send_email(settings, to=[], from_mail="", message=""):
     mail_server = settings.email_server.split(':')
@@ -32,7 +34,8 @@ def token_required(f):
     # Token Wrapper
 
     def wrapper(*args, **kwargs):
-        current_user = _check_token
+
+        current_user = _check_token()
         return f(*args, **kwargs, current_user=current_user)
 
     wrapper.__doc__ = f.__doc__
@@ -47,7 +50,7 @@ def user_has(permission):
         def wrapper(*args, **kwargs):
             if(current_app.config['PERMISSIONS_DISABLED']):
                 return f(*args, **kwargs)
-            current_user = _check_token()
+            current_user = kwargs['current_user']
 
             # If this is a pairing token and its the add_agent permission
             # bypass the route guard and let the route finish
@@ -105,6 +108,11 @@ def _check_token():
     if auth_header:
         try:
             access_token = auth_header.split(' ')[1]   
+
+            blacklisted = AuthTokenBlacklist.query.filter_by(auth_token=access_token).first()
+            if blacklisted:
+                raise ValueError('Token retired.')
+
             try:
                 token = jwt.decode(access_token, current_app.config['SECRET_KEY'])
 
@@ -124,7 +132,10 @@ def _check_token():
                 elif 'type' in token and token['type'] == 'pairing':
                     current_user = token
                 else:
-                    current_user = User.query.filter_by(uuid=token['uuid']).first()
+                    try:
+                        current_user = User.query.filter_by(uuid=token['uuid']).options(joinedload(User.role), joinedload(User.organization), load_only(User.uuid, User.first_name, User.last_name, User.email, User.username, User.locked)).first()
+                    except Exception as e:
+                        abort(401, 'Unknown user error.')
 
                     # If the user is currently locked
                     # reject the accesss_token and expire it
@@ -133,10 +144,6 @@ def _check_token():
                         blacklist.create()
                         
                         abort(401, 'Unauthorized')
-                
-                blacklisted = AuthTokenBlacklist.query.filter_by(auth_token=access_token).first()
-                if blacklisted:
-                    raise ValueError('Token retired.')
 
             except ValueError:
                 abort(401, 'Token retired.')
@@ -148,6 +155,7 @@ def _check_token():
                 abort(401, 'Unknown token error.')
 
         except IndexError:
+            abort(401, 'Invalid access token.')
             raise jwt.InvalidTokenError
     else:
         abort(403, 'Access token required.')

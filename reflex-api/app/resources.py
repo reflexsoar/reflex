@@ -21,7 +21,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy import desc, asc, func, case, distinct
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, joinedload
 from .models import User, UserGroup, db, RefreshToken, GlobalSettings, AuthTokenBlacklist, Role, CaseFile, Credential, CloseReason, Tag, List, ListValue, Permission, Playbook, Event, EventRule, Observable, DataType, Input, EventStatus, Agent, AgentRole, AgentGroup, Case, CaseTask, TaskNote, CaseHistory, CaseTemplate, CaseTemplateTask, CaseComment, CaseStatus, Plugin, PluginConfig, DataType, observable_case_association, case_tag_association
 from .utils import token_required, user_has, _get_current_user, generate_token, send_email, check_password_reset_token, build_search_filters
 from .schemas import *
@@ -215,7 +215,6 @@ class ResetPassword(Resource):
                         expired_token.create()
                         return {'message':'Password successfully changed.'}
                     except Exception as e:
-                        print(e)
                         ns_auth.abort(400, 'An error occured while trying to reset the users password.')
                 else:
                     ns_auth.abort(400, 'A new password is required.')
@@ -342,7 +341,6 @@ class Whoami(Resource):
     @token_required
     def get(self, current_user):
         ''' Returns all the details about the current user '''
-        current_user = _get_current_user()
         return current_user
 
 @ns_user.route('/generate_api_key')
@@ -354,7 +352,7 @@ class UserGenerateApiKey(Resource):
     @user_has('use_api')
     def get(self, current_user):
         ''' Returns a new API key for the user making the request '''
-        return current_user().generate_api_key()
+        return current_user.generate_api_key()
 
 
 user_parser = api.parser()
@@ -376,9 +374,9 @@ class UserList(Resource):
 
         if args['username']:
             users = User.query.filter(
-                User.username.like(args['username']+"%"), User.deleted == False, User.organization_uuid == current_user().organization_uuid).all()
+                User.username.like(args['username']+"%"), User.deleted == False, User.organization_uuid == current_user.organization.uuid).all()
         else:
-            users = User.query.filter_by(deleted=False, organization_uuid=current_user().organization_uuid).all()
+            users = User.query.filter_by(deleted=False, organization_uuid=current_user.organization.uuid).all()
         return users
 
     # TODO: Add a lock to this so only the Admin users and those with 'add_user' permission can do this
@@ -392,18 +390,18 @@ class UserList(Resource):
     def post(self, current_user):
         ''' Creates a new users '''
 
-        user = User.query.filter_by(email=api.payload['email'], organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(email=api.payload['email'], organization_uuid=current_user.organization.uuid).first()
 
         if user:
             ns_user.abort(409, "User with this email already exists.")
         
-        user = User.query.filter_by(username=api.payload['username'], organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(username=api.payload['username'], organization_uuid=current_user.organization.uuid).first()
     
         if user:
             ns_user.abort(409, "User with this username already exists.")
 
         if not user:
-            user = User(organization_uuid=current_user().organization_uuid, **api.payload)
+            user = User(organization_uuid=current_user.organization.uuid, **api.payload)
             user.create()
             return {'message': 'Successfully created the user.', 'user': user}
         else:
@@ -420,7 +418,7 @@ class UnlockUser(Resource):
     def put(self, uuid, current_user):
         ''' Unlocks a user and resets their failed logons back to 0 '''
 
-        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user:
             user.locked = False
             user.failed_logons = 0
@@ -439,7 +437,7 @@ class UserDetails(Resource):
     @user_has('view_users')
     def get(self, uuid, current_user):
         ''' Returns information about a user '''
-        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user:
             return user
         else:
@@ -453,10 +451,10 @@ class UserDetails(Resource):
     def put(self, uuid, current_user):
         ''' Updates information for a user '''
 
-        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user:
             if 'username' in api.payload:
-                target_user = User.query.filter_by(username=api.payload['username'], organization_uuid=current_user().organization_uuid).first()
+                target_user = User.query.filter_by(username=api.payload['username'], organization_uuid=current_user.organization.uuid).first()
                 if target_user:
                     if target_user.uuid == uuid:
                         del api.payload['username']
@@ -464,22 +462,19 @@ class UserDetails(Resource):
                         ns_user.abort(409, 'Username already taken.')
 
             if 'email' in api.payload:
-                target_user = User.query.filter_by(email=api.payload['email'], organization_uuid=current_user().organization_uuid).first()
+                target_user = User.query.filter_by(email=api.payload['email'], organization_uuid=current_user.organization.uuid).first()
                 if target_user:
                     if target_user.uuid == uuid:
                         del api.payload['email']
                     else:
                         ns_user.abort(409, 'Email already taken.')
             
-            if 'password' in api.payload and not current_user().has_right('reset_user_password'):
-                print('not allowed homie')
+            if 'password' in api.payload and not current_user.has_right('reset_user_password'):
                 api.payload.pop('password')
-            if 'password' in api.payload and current_user().has_right('reset_user_password'):
+            if 'password' in api.payload and current_user.has_right('reset_user_password'):
                 pw = api.payload.pop('password')
                 user.password = pw
                 user.save()
-
-            print(api.payload)
             
             user.update(api.payload)
             return user
@@ -498,9 +493,9 @@ class UserDetails(Resource):
         used to preserve database relationships like ownership, comment history.
         Deleted users can not be restored at this time.        
         '''
-        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user:
-            if current_user().uuid == user.uuid:
+            if current_user.uuid == user.uuid:
                 ns_user.abort(403, 'User can not delete themself.')
             else:
                 user.deleted = True
@@ -516,13 +511,13 @@ class PermissionList(Resource):
     @api.marshal_with(mod_permission_list)
     def get(self):
         ''' Gets a list of all the permission sets '''
-        return Permission.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Permission.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.expect(mod_permission_full)
     @api.response('200', 'Successfully created permission set.')
     def post(self):
         ''' Creates a new permission set '''
-        perm = Permission(organization_uuid=current_user().organization_uuid, **api.payload)
+        perm = Permission(organization_uuid=current_user.organization.uuid, **api.payload)
         perm.create()
         return {'message': 'Successfully created permission set.', 'uuid': perm.uuid}
 
@@ -533,7 +528,7 @@ class PermissionDetails(Resource):
     @api.marshal_with(mod_permission_list)
     def get(self, uuid):
         ''' Gets the permissions based '''
-        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if perm:
             return perm
         else:
@@ -546,7 +541,7 @@ class PermissionDetails(Resource):
     @user_has('set_role_permissions')
     def put(self, uuid, current_user):
         ''' Updates the permission set '''
-        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if perm:
             perm.update(api.payload)
             return perm
@@ -558,7 +553,7 @@ class PermissionDetails(Resource):
     @user_has('delete_role')
     def delete(self, uuid, current_user):
         ''' Removes the permission set '''
-        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        perm = Permission.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if perm:
             if(len(perm.roles) > 0):
                 ns_perms.abort(
@@ -580,7 +575,7 @@ class DataTypeList(Resource):
     @token_required
     def get(self, current_user):
         ''' Gets a list of all the data types '''
-        return DataType.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return DataType.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_data_type_create)
@@ -589,7 +584,7 @@ class DataTypeList(Resource):
     @user_has('create_data_type')
     def post(self, current_user):
         ''' Creates a new data_type set '''
-        data_type = DataType(organization_uuid=current_user().organization_uuid, **api.payload)
+        data_type = DataType(organization_uuid=current_user.organization.uuid, **api.payload)
         data_type.create()
         return {'message': 'Successfully created data type.', 'uuid': data_type.uuid}
 
@@ -602,7 +597,7 @@ class DataTypeDetails(Resource):
     @token_required
     def get(self, uuid, current_user):
         ''' Gets a data type '''
-        data_type = DataType.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        data_type = DataType.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if data_type:
             return data_type
         else:
@@ -615,7 +610,7 @@ class DataTypeDetails(Resource):
     @user_has('update_data_type')
     def put(self, uuid, current_user):
         ''' Updates the data type '''
-        data_type = DataType.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        data_type = DataType.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if data_type:
             data_type.update(api.payload)
             return data_type
@@ -643,7 +638,7 @@ class ObservableList(Resource):
                 'model': 'Observable',
                 'field': 'organization_uuid',
                 'op':'eq',
-                'value': current_user().organization_uuid
+                'value': current_user.organization.uuid
             }
         ]
 
@@ -673,7 +668,7 @@ class ObservableDetails(Resource):
     def get(self, uuid, current_user):
         ''' Returns information about a case task '''
         observable = Observable.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if observable:
             return observable
         else:
@@ -687,7 +682,7 @@ class ObservableDetails(Resource):
     def put(self, uuid, current_user):
         ''' Updates information for a observable '''
         observable = Observable.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if observable:
             observable.update(api.payload)
             return observable
@@ -710,7 +705,7 @@ class BulkObservableDetails(Resource):
             _observables = []
             for obs in api.payload.pop('observables'):
                 observable = Observable.query.filter_by(
-                    uuid=obs, organization_uuid=current_user().organization_uuid).first()
+                    uuid=obs, organization_uuid=current_user.organization.uuid).first()
                 if observable:
                     observable.update(api.payload)
                     _observables.append(observable)
@@ -729,7 +724,7 @@ class CaseFileDetails(Resource):
         relationship with the actual case as well
         """
 
-        case_file = CaseFile.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=uuid).first()
+        case_file = CaseFile.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=uuid).first()
         if case_file:
             case_file.delete()
             return {'message': 'Successfully removed filed'}
@@ -778,7 +773,7 @@ class UploadCaseFile(Resource):
                     continue
 
                 if uploaded_file and allowed_file(uploaded_file.filename):
-                    case_file = CaseFile(filename=uploaded_file.filename, case_uuid=uuid, organization_uuid=current_user().organization_uuid)
+                    case_file = CaseFile(filename=uploaded_file.filename, case_uuid=uuid, organization_uuid=current_user.organization.uuid)
                     case_file.compute_hashes(uploaded_file.read())
                     case_file.extension = case_file.filename.rsplit('.',1)[1]
                     case_file.mime_type = uploaded_file.mimetype
@@ -805,7 +800,7 @@ class CaseBulkAddObservables(Resource):
 
         '''
         # Fetch the case via its UUID
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         
         if case:
 
@@ -816,7 +811,7 @@ class CaseBulkAddObservables(Resource):
                                 if observable['value'] not in observable_values]
 
             # Process all the observables in the API call
-            observables = create_observables(observables_list, current_user().organization_uuid)
+            observables = create_observables(observables_list, current_user.organization.uuid)
 
             # Add the observables to the case
             if(len(case.observables) == 0):
@@ -864,7 +859,7 @@ class CaseObservableList(Resource):
                 'model': 'Case',
                 'field': 'organization_uuid',
                 'op':'eq',
-                'value': current_user().organization_uuid
+                'value': current_user.organization.uuid
             }
         ]
 
@@ -892,7 +887,7 @@ class CaseObservableList(Resource):
                 }
             }
         return response
-        #results = Case.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=uuid).first().observables
+        #results = Case.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=uuid).first().observables
 
 
 case_parser = pager_parser.copy()
@@ -942,7 +937,7 @@ class CaseList(Resource):
 
         # Only can be used if my_tasks is not being flagged
         if args['my_cases'] and not args['my_tasks'] and not args['owner']:
-            filter_spec.append({'model':'User', 'op':'eq', 'value':current_user().username, 'field':'username'})
+            filter_spec.append({'model':'User', 'op':'eq', 'value':current_user.username, 'field':'username'})
 
         # Only can be used if my_tasks is not being flagged
         if args['owner'] and not args['my_tasks']:            
@@ -954,7 +949,7 @@ class CaseList(Resource):
         if args['my_tasks']:
             base_query = base_query.join(CaseTask, Case.uuid == CaseTask.case_uuid).join(User, User.uuid == CaseTask.owner_uuid).group_by(Case.id)
             filter_spec.append([
-                {'model':'User', 'op':'eq', 'value':current_user().username, 'field':'username'},
+                {'model':'User', 'op':'eq', 'value':current_user.username, 'field':'username'},
                 {'model':'CaseTask', 'op':'ne', 'value':2, 'field':'status'}
             ])
 
@@ -991,30 +986,30 @@ class CaseList(Resource):
         event_observables = []
         case_template_uuid = None
         
-        settings = GlobalSettings.query.filter_by(organization_uuid=current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid=current_user.organization.uuid).first()
 
         if 'case_template_uuid' in api.payload:
             case_template_uuid = api.payload.pop('case_template_uuid')
 
         if 'tags' in api.payload:
             tags = api.payload.pop('tags')
-            _tags = parse_tags(tags, current_user().organization_uuid)
+            _tags = parse_tags(tags, current_user.organization.uuid)
 
         if 'owner_uuid' in api.payload:
             owner = api.payload.pop('owner_uuid')
-            user = User.query.filter_by(uuid=owner, organization_uuid=current_user().organization_uuid).first()
+            user = User.query.filter_by(uuid=owner, organization_uuid=current_user.organization.uuid).first()
             if user:
                 api.payload['owner'] = user
         else:
             # Automatically assign the case to the creator if they didn't pick an owner
             if settings.assign_case_on_create:
-                api.payload['owner'] = User.query.filter_by(uuid=current_user().uuid).first()
+                api.payload['owner'] = User.query.filter_by(uuid=current_user.uuid).first()
 
         if 'observables' in api.payload:
             observables = api.payload.pop('observables')
             api.payload['observables'] = []
             for uuid in observables:
-                observable = Observable.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+                observable = Observable.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
                 if observable:
                     api.payload['observables'].append(observable)
 
@@ -1027,7 +1022,7 @@ class CaseList(Resource):
             # Pull all the observables out of the events
             # so they can be added to the case
             for uuid in events:
-                event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+                event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
                 if event:
                     api.payload['events'].append(event)
                 if event.observables:
@@ -1047,7 +1042,7 @@ class CaseList(Resource):
                 api.payload['observables'].append(
                     observable_collection[observable][0])
 
-        case = Case(organization_uuid=current_user().organization_uuid, **api.payload)
+        case = Case(organization_uuid=current_user.organization.uuid, **api.payload)
         case.create()
 
         if len(_tags) > 0:
@@ -1055,7 +1050,7 @@ class CaseList(Resource):
             case.save()
 
         # Set the default status to New
-        case_status = CaseStatus.query.filter_by(name="New", organization_uuid=current_user().organization_uuid).first()
+        case_status = CaseStatus.query.filter_by(name="New", organization_uuid=current_user.organization.uuid).first()
         case.status = case_status
         case.save()
         
@@ -1064,7 +1059,7 @@ class CaseList(Resource):
         if case_template_uuid:
             case_template = CaseTemplate.query.filter_by(
                 uuid=case_template_uuid,
-                organization_uuid=current_user().organization_uuid).first()
+                organization_uuid=current_user.organization.uuid).first()
 
             # Append the default tags
             for tag in case_template.tags:
@@ -1078,7 +1073,7 @@ class CaseList(Resource):
                 case_task = CaseTask(title=task.title, description=task.description,
                                      order=task.order, owner=task.owner, group=task.group,
                                      from_template=True,
-                                     organization_uuid=current_user().organization_uuid)
+                                     organization_uuid=current_user.organization.uuid)
                 case.tasks.append(case_task)
 
             # Set the default severity
@@ -1089,7 +1084,7 @@ class CaseList(Resource):
 
 
         for event in case.events:
-            event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user().organization_uuid).first()
+            event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user.organization.uuid).first()
             event.save()
 
         case.add_history(message='Case created')
@@ -1114,7 +1109,7 @@ class AddEventsToCase(Resource):
             'success': True,
             'case': None
         }
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case:
             response['case'] = case
 
@@ -1123,7 +1118,7 @@ class AddEventsToCase(Resource):
             if 'events' in api.payload:
                 for evt in api.payload['events']:
                     _event_observables = []
-                    event = Event.query.filter_by(uuid=evt, organization_uuid=current_user().organization_uuid).first()
+                    event = Event.query.filter_by(uuid=evt, organization_uuid=current_user.organization.uuid).first()
                     if event:
 
                         # If the event is already imported into another case
@@ -1134,7 +1129,7 @@ class AddEventsToCase(Resource):
                         try:
                             _event_observables += [observable for observable in event.observables]
                             new_observables += [observable for observable in _event_observables if observable.value.lower() not in [o.value.lower() for o in case.observables if o not in new_observables]]
-                            event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user().organization_uuid).first()
+                            event.status = EventStatus.query.filter_by(name='Open', organization_uuid=current_user.organization.uuid).first()
                             case.events.append(event)
                             case.save()
                             response['results'].append({'reference': evt, 'message': 'Event successfully merged into Case.'})
@@ -1165,7 +1160,7 @@ class RelateCases(Resource):
     @user_has('view_cases')
     def get(self, current_user, uuid):
         ''' Returns a list of related cases '''
-        case = Case.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=uuid).first()
+        case = Case.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=uuid).first()
         _cases = []
         if case:
             if len(case.related_cases) > 0:
@@ -1183,12 +1178,12 @@ class RelateCases(Resource):
     @user_has('update_case')
     def put(self, current_user, uuid):
 
-        case = Case.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=uuid).first()
+        case = Case.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=uuid).first()
         if case:
             if 'cases' in api.payload:
                 _cases = api.payload.pop('cases')
                 for c in _cases:
-                    _case = Case.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=c).all()
+                    _case = Case.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=c).all()
                     if _case not in case.related_cases:
                         case.related_cases += _case
                 case.save()
@@ -1203,7 +1198,7 @@ class RelateCases(Resource):
     def delete(self, current_user, uuid):
         ''' Unlinks a case or a group of cases '''
 
-        case = Case.query.filter_by(organization_uuid=current_user().organization_uuid, uuid=uuid).first()
+        case = Case.query.filter_by(organization_uuid=current_user.organization.uuid, uuid=uuid).first()
         if case:
             if 'cases' in api.payload:
                 _cases = api.payload.pop('cases')
@@ -1257,7 +1252,7 @@ class CaseReport(Resource):
     @user_has('view_cases')
     def get(self, uuid, current_user):
         ''' Returns a Markdown formatted overview of the Case '''
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
 
         report_format = """# {title}
 ## Observables
@@ -1288,7 +1283,7 @@ class CaseDetails(Resource):
     @user_has('view_cases')
     def get(self, uuid, current_user):
         ''' Returns information about a case '''
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case:
             return case
         else:
@@ -1301,7 +1296,7 @@ class CaseDetails(Resource):
     @user_has('update_case')
     def put(self, uuid, current_user):
         ''' Updates information for a case '''
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case:
 
             for f in ['severity', 'tlp', 'status_uuid', 'owner', 'description', 'owner_uuid']:
@@ -1324,7 +1319,7 @@ class CaseDetails(Resource):
                         # If the case is now set to close, close all the events
                         if(status.closed):
                             for event in case.events:
-                                event.status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, name='Closed', closed=True).first()
+                                event.status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, name='Closed', closed=True).first()
                                 event.save()
                             
                             case.closed = True
@@ -1332,7 +1327,7 @@ class CaseDetails(Resource):
                         # If the case is being re-opened
                         if(case.status.closed and not status.closed):
                             for event in case.events:
-                                event.status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, name='Open', closed=False).first()
+                                event.status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, name='Open', closed=False).first()
                                 event.save()
                                 
                             case.closed = False
@@ -1345,7 +1340,6 @@ class CaseDetails(Resource):
                         message = '**Description** updated'
 
                     elif f == 'owner_uuid':
-                        print("WE ARE HERE!")
                         if api.payload['owner_uuid'] == '':
                             
                             api.payload['owner_uuid'] = None
@@ -1364,7 +1358,7 @@ class CaseDetails(Resource):
                             message="**{}** changed to **{}**".format(f.title(), value))
             
             if 'tags' in api.payload:
-                _tags = parse_tags(api.payload.pop('tags'), current_user().organization_uuid)
+                _tags = parse_tags(api.payload.pop('tags'), current_user.organization.uuid)
                 case.tags = _tags
                 case.add_history(message="**Tags** were modified")
                 case.save()
@@ -1399,7 +1393,7 @@ class CaseDetails(Resource):
                 # apply the new template
                 if not tasks_started and api.payload['case_template_uuid'] != case.case_template_uuid:
 
-                    case_template = CaseTemplate.query.filter_by(uuid=api.payload['case_template_uuid'], organization_uuid=current_user().organization_uuid).first()
+                    case_template = CaseTemplate.query.filter_by(uuid=api.payload['case_template_uuid'], organization_uuid=current_user.organization.uuid).first()
                     if case_template:
 
                         # Append the default tags
@@ -1414,7 +1408,7 @@ class CaseDetails(Resource):
                             case_task = CaseTask(title=task.title, description=task.description,
                                                 order=task.order, owner=task.owner, group=task.group,
                                                 from_template=True,
-                                                organization_uuid=current_user().organization_uuid)
+                                                organization_uuid=current_user.organization.uuid)
                             case.tasks.append(case_task)
                         case.save()
                         message = 'The case template **{}** was applied'.format(case_template.title)
@@ -1431,7 +1425,7 @@ class CaseDetails(Resource):
     @user_has('delete_case')
     def delete(self, uuid, current_user):
         ''' Deletes a case '''
-        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case = Case.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case:
 
             # Delete any associated observables
@@ -1448,7 +1442,7 @@ class CaseDetails(Resource):
 
             # Set any associated events back to New status
             for event in case.events:
-                event.status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, name='New').first()
+                event.status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, name='New').first()
                 event.save()
             
             case.events = []
@@ -1475,8 +1469,8 @@ class CaseTaskList(Resource):
         args = case_task_parser.parse_args()
 
         if args['case_uuid']:
-            return CaseTask.query.filter_by(case_uuid=args['case_uuid'], organization_uuid=current_user().organization_uuid).all()
-        return CaseTask.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+            return CaseTask.query.filter_by(case_uuid=args['case_uuid'], organization_uuid=current_user.organization.uuid).all()
+        return CaseTask.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_case_task_create)
@@ -1493,7 +1487,7 @@ class CaseTaskList(Resource):
             title=api.payload['title'], case_uuid=api.payload['case_uuid']).first()
         if not case_task:
 
-            case_task = CaseTask(organization_uuid=current_user().organization_uuid, **api.payload)
+            case_task = CaseTask(organization_uuid=current_user.organization.uuid, **api.payload)
             case_task.create()
 
             case = Case.query.filter_by(uuid=api.payload['case_uuid']).first()
@@ -1517,7 +1511,7 @@ class CaseTaskDetails(Resource):
     def get(self, uuid, current_user):
         ''' Returns information about a case task '''
         case_task = CaseTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_task:
             return case_task
         else:
@@ -1532,9 +1526,9 @@ class CaseTaskDetails(Resource):
         ''' Updates information for a case_task '''
 
         history_message = None
-        settings = GlobalSettings.query.filter_by(organization_uuid=current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid=current_user.organization.uuid).first()
         case_task = CaseTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_task:
 
             if 'name' in api.payload and CaseTask.query.filter_by(title=api.payload['title'], case_uuid=api.payload['case_uuid']).first():
@@ -1560,7 +1554,7 @@ class CaseTaskDetails(Resource):
                     case_task.save()
                     
                 case_task.update(api.payload)
-                case = Case.query.filter_by(uuid=case_task.case_uuid, organization_uuid=current_user().organization_uuid).first()
+                case = Case.query.filter_by(uuid=case_task.case_uuid, organization_uuid=current_user.organization.uuid).first()
                 if history_message:
                     case.add_history(message=history_message.format(case_task.title))
                 return case_task
@@ -1573,11 +1567,11 @@ class CaseTaskDetails(Resource):
     def delete(self, uuid, current_user):
         ''' Deletes a case_task '''
         case_task = CaseTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_task:
             case_task.delete()
 
-            case = Case.query.filter_by(uuid=case_task.case_uuid, organization_uuid=current_user().organization_uuid).first()
+            case = Case.query.filter_by(uuid=case_task.case_uuid, organization_uuid=current_user.organization.uuid).first()
             case.add_history(message="Task {} deleted".format(case_task.title))
             return {'message': 'Sucessfully deleted case task.'}
 
@@ -1599,7 +1593,7 @@ class CaseNoteList(Resource):
         args = task_note_parser.parse_args()
 
         if args:
-            notes = TaskNote.query.filter_by(task_uuid=args['task_uuid'], organization_uuid=current_user().organization_uuid).order_by(asc(TaskNote.created_at)).all()
+            notes = TaskNote.query.filter_by(task_uuid=args['task_uuid'], organization_uuid=current_user.organization.uuid).order_by(asc(TaskNote.created_at)).all()
             return notes
 
     
@@ -1612,9 +1606,9 @@ class CaseNoteList(Resource):
     def post(self, current_user):
 
         if 'task_uuid' in api.payload:
-            case_task = CaseTask.query.filter_by(uuid=api.payload['task_uuid'], organization_uuid=current_user().organization_uuid).first()
+            case_task = CaseTask.query.filter_by(uuid=api.payload['task_uuid'], organization_uuid=current_user.organization.uuid).first()
             if case_task:
-                note = TaskNote(note=api.payload['note'], task=case_task, organization_uuid=current_user().organization_uuid)
+                note = TaskNote(note=api.payload['note'], task=case_task, organization_uuid=current_user.organization.uuid)
                 note.create()
 
                 # If the case task is already complete, mark this note as occurring after
@@ -1646,7 +1640,7 @@ class CaseTemplateList(Resource):
             case_template = CaseTemplate.query.filter(
                 CaseTemplate.title.like(args['title']+"%")).all()
         else:
-            case_template = CaseTemplate.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+            case_template = CaseTemplate.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
         return case_template
 
@@ -1670,7 +1664,7 @@ class CaseTemplateList(Resource):
             ''' Creates a new case_template template '''
             if 'tags' in api.payload:
                 tags = api.payload.pop('tags')
-                _tags = parse_tags(tags, current_user().organization_uuid)
+                _tags = parse_tags(tags, current_user.organization.uuid)
 
             '''if 'owner' in api.payload:
                 owner = api.payload.pop('owner')
@@ -1682,11 +1676,11 @@ class CaseTemplateList(Resource):
                 _tasks = []
                 tasks = api.payload.pop('tasks')
                 for _task in tasks:
-                    task = CaseTemplateTask(organization_uuid=current_user().organization_uuid, **_task)
+                    task = CaseTemplateTask(organization_uuid=current_user.organization.uuid, **_task)
                     _tasks.append(task)
             api.payload['tasks'] = _tasks
 
-            case_template = CaseTemplate(organization_uuid=current_user().organization_uuid, **api.payload)
+            case_template = CaseTemplate(organization_uuid=current_user.organization.uuid, **api.payload)
             case_template.create()
 
             if len(_tags) > 0:
@@ -1734,7 +1728,7 @@ class AddTasksToCaseTemplate(Resource):
                         {'reference': task_uuid, 'message': 'Task not found.'})
                     response['success'] = False
 
-        template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if template:
             template.tasks = _tasks
             template.save()
@@ -1754,7 +1748,7 @@ class CaseTemplateDetails(Resource):
     @user_has('view_case_templates')
     def get(self, uuid):
         ''' Returns information about a case_template '''
-        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template:
             return case_template
         else:
@@ -1767,7 +1761,7 @@ class CaseTemplateDetails(Resource):
     @user_has('update_case_template')
     def put(self, uuid):
         ''' Updates information for a case_template '''
-        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template:
             if 'name' in api.payload and CaseTemplate.query.filter_by(name=api.payload['name']).first():
                 ns_case_template.abort(
@@ -1783,7 +1777,7 @@ class CaseTemplateDetails(Resource):
     @user_has('delete_case_template')
     def delete(self, uuid):
         ''' Deletes a case_template '''
-        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_template = CaseTemplate.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template:
             case_template.delete()
             return {'message': 'Sucessfully deleted case_template.'}
@@ -1798,7 +1792,7 @@ class CaseTemplateTaskList(Resource):
     @user_has('view_case_template_tasks')
     def get(self, current_user):
         ''' Returns a list of case_template_task '''
-        return CaseTemplateTask.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return CaseTemplateTask.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_case_template_task_create)
@@ -1813,7 +1807,7 @@ class CaseTemplateTaskList(Resource):
             title=api.payload['title'], case_template_uuid=api.payload['case_template_uuid']).first()
         if not case_template_task:
 
-            case_template_task = CaseTemplateTask(organization_uuid=current_user().organization_uuid, **api.payload)
+            case_template_task = CaseTemplateTask(organization_uuid=current_user.organization.uuid, **api.payload)
             case_template_task.create()
 
             if len(_tags) > 0:
@@ -1838,7 +1832,7 @@ class CaseTemplateTaskDetails(Resource):
     def get(self, uuid, current_user):
         ''' Returns information about a case_template_task '''
         case_template_task = CaseTemplateTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template_task:
             return case_template_task
         else:
@@ -1852,7 +1846,7 @@ class CaseTemplateTaskDetails(Resource):
     def put(self, uuid, current_user):
         ''' Updates information for a case_template_task '''
         case_template_task = CaseTemplateTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template_task:
             if 'name' in api.payload and CaseTemplateTask.query.filter_by(title=api.payload['title']).first():
                 ns_case_template_task.abort(
@@ -1869,7 +1863,7 @@ class CaseTemplateTaskDetails(Resource):
     def delete(self, uuid, current_user):
         ''' Deletes a case_template_task '''
         case_template_task = CaseTemplateTask.query.filter_by(
-            uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_template_task:
             case_template_task.delete()
             return {'message': 'Sucessfully deleted case_template_task.'}
@@ -1892,9 +1886,9 @@ class CaseCommentList(Resource):
         args = case_comment_parser.parse_args()
 
         if args['case_uuid']:
-            return CaseComment.query.filter_by(case_uuid=args['case_uuid'], organization_uuid=current_user().organization_uuid).order_by(asc(CaseComment.created_at)).all()
+            return CaseComment.query.filter_by(case_uuid=args['case_uuid'], organization_uuid=current_user.organization.uuid).order_by(asc(CaseComment.created_at)).all()
         else:
-            return CaseComment.query.filter_by(organization_uuid=current_user().organization_uuid).order_by(asc(CaseComment.created_at)).all()
+            return CaseComment.query.filter_by(organization_uuid=current_user.organization.uuid).order_by(asc(CaseComment.created_at)).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_comment_create)
@@ -1905,7 +1899,7 @@ class CaseCommentList(Resource):
     def post(self, current_user):
         _tags = []
         ''' Creates a new comment '''
-        case_comment = CaseComment(organization_uuid=current_user().organization_uuid, **api.payload)
+        case_comment = CaseComment(organization_uuid=current_user.organization.uuid, **api.payload)
         case_comment.create()
 
         case = Case.query.filter_by(uuid=api.payload['case_uuid']).first()
@@ -1924,7 +1918,7 @@ class CaseCommentDetails(Resource):
     @user_has('view_case_comments')
     def get(self, uuid, current_user):
         ''' Returns information about a comment '''
-        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_comment:
             return case_comment
         else:
@@ -1937,7 +1931,7 @@ class CaseCommentDetails(Resource):
     @user_has('update_case_comment')
     def put(self, uuid, current_user):
         ''' Updates information for a comment '''
-        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_comment:
             case_comment.edited = True
             case_comment.update(api.payload)
@@ -1950,7 +1944,7 @@ class CaseCommentDetails(Resource):
     @user_has('delete_case_comment')
     def delete(self, uuid, current_user):
         ''' Deletes a comment '''
-        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_comment = CaseComment.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_comment:
             case_comment.delete()
             return {'message': 'Sucessfully deleted comment.'}
@@ -1964,7 +1958,7 @@ class CaseStatusList(Resource):
     @token_required
     def get(self, current_user):
         ''' Returns a list of case_statuss '''
-        return CaseStatus.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return CaseStatus.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_case_status_create)
@@ -1978,7 +1972,7 @@ class CaseStatusList(Resource):
             name=api.payload['name']).first()
 
         if not case_status:
-            case_status = CaseStatus(organization_uuid=current_user().organization_uuid, **api.payload)
+            case_status = CaseStatus(organization_uuid=current_user.organization.uuid, **api.payload)
             case_status.create()
         else:
             ns_case_status.abort(409, 'Case Status already exists.')
@@ -1993,7 +1987,7 @@ class CaseStatusDetails(Resource):
     @token_required
     def get(self, uuid, current_user):
         ''' Returns information about an CaseStatus '''
-        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_status:
             return case_status
         else:
@@ -2006,7 +2000,7 @@ class CaseStatusDetails(Resource):
     @user_has('update_case_status')
     def put(self, uuid, current_user):
         ''' Updates information for an Case Status '''
-        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_status:
             if 'name' in api.payload and CaseStatus.query.filter_by(name=api.payload['name']).first():
                 ns_case_status.abort(409, 'Case Status name already exists.')
@@ -2021,7 +2015,7 @@ class CaseStatusDetails(Resource):
     @user_has('delete_case_status')
     def delete(self, uuid, current_user):
         ''' Deletes an CaseStatus '''
-        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        case_status = CaseStatus.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if case_status:
             case_status.delete()
             return {'message': 'Sucessfully deleted Case Status.'}
@@ -2044,8 +2038,8 @@ class CaseHistoryList(Resource):
         args = case_history_parser.parse_args()
 
         if args['case_uuid']:
-            return CaseHistory.query.filter_by(organization_uuid=current_user().organization_uuid, case_uuid=args['case_uuid']).all()
-        return CaseHistory.query.filter_by(organization_uuid=current_user().organization_uuid, case_uuid=args['case_uuid']).all()
+            return CaseHistory.query.filter_by(organization_uuid=current_user.organization.uuid, case_uuid=args['case_uuid']).all()
+        return CaseHistory.query.filter_by(organization_uuid=current_user.organization.uuid, case_uuid=args['case_uuid']).all()
 
 
 @ns_close_reason.route("")
@@ -2070,7 +2064,7 @@ class CloseReasonList(Resource):
             name=api.payload['name']).first()
 
         if not close_reason:
-            close_reason = CloseReason(organization_uuid=current_user().organization_uuid, **api.payload)
+            close_reason = CloseReason(organization_uuid=current_user.organization.uuid, **api.payload)
             close_reason.create()
         else:
             ns_close_reason.abort(409, 'Close Reason already exists.')
@@ -2085,7 +2079,7 @@ class CloseReasonDetails(Resource):
     @token_required
     def get(self, uuid, current_user):
         ''' Returns information about an CloseReason '''
-        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if close_reason:
             return close_reason
         else:
@@ -2098,7 +2092,7 @@ class CloseReasonDetails(Resource):
     @user_has('update_close_reason')
     def put(self, uuid, current_user):
         ''' Updates information for an Close Reason '''
-        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if close_reason:
             if 'name' in api.payload and CloseReason.query.filter_by(name=api.payload['name']).first():
                 ns_close_reason.abort(409, 'Close Reason name already exists.')
@@ -2113,7 +2107,7 @@ class CloseReasonDetails(Resource):
     @user_has('delete_close_reason')
     def delete(self, uuid, current_user):
         ''' Deletes an CloseReason '''
-        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        close_reason = CloseReason.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if close_reason:
             close_reason.delete()
             return {'message': 'Sucessfully deleted Close Reason.'}
@@ -2128,7 +2122,7 @@ class PlaybookList(Resource):
     @user_has('view_playbooks')
     def get(self, current_user):
         ''' Returns a list of playbook '''
-        return Playbook.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Playbook.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_playbook_create)
@@ -2143,9 +2137,9 @@ class PlaybookList(Resource):
         if not playbook:
             if 'tags' in api.payload:
                 tags = api.payload.pop('tags')
-                _tags = parse_tags(tags, current_user().organization_uuid)
+                _tags = parse_tags(tags, current_user.organization.uuid)
 
-            playbook = Playbook(organization_uuid=current_user().organization_uuid, **api.payload)
+            playbook = Playbook(organization_uuid=current_user.organization.uuid, **api.payload)
             playbook.create()
 
             if len(_tags) > 0:
@@ -2168,7 +2162,7 @@ class PlaybookDetails(Resource):
     @user_has('view_playbooks')
     def get(self, uuid):
         ''' Returns information about a playbook '''
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             return playbook
         else:
@@ -2181,7 +2175,7 @@ class PlaybookDetails(Resource):
     @user_has('update_playbook')
     def put(self, uuid):
         ''' Updates information for a playbook '''
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             if 'name' in api.payload and Playbook.query.filter_by(name=api.payload['name']).first():
                 ns_playbook.abort(409, 'Playbook name already exists.')
@@ -2196,7 +2190,7 @@ class PlaybookDetails(Resource):
     @user_has('delete_playbook')
     def delete(self, uuid):
         ''' Deletes a playbook '''
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             playbook.delete()
             return {'message': 'Sucessfully deleted playbook.'}
@@ -2213,7 +2207,7 @@ class DeletePlaybookTag(Resource):
         tag = Tag.query.filter_by(name=name).first()
         if not tag:
             ns_playbook.abort(404, 'Tag not found.')
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             playbook.tags.remove(tag)
             playbook.save()
@@ -2232,10 +2226,10 @@ class TagPlaybook(Resource):
         ''' Adds a tag to an playbook '''
         tag = Tag.query.filter_by(name=name).first()
         if not tag:
-            tag = Tag(organization_uuid=current_user().organization_uuid, **{'name': name, 'color': '#fffff'})
+            tag = Tag(organization_uuid=current_user.organization.uuid, **{'name': name, 'color': '#fffff'})
             tag.create()
 
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             playbook.tags += [tag]
             playbook.save()
@@ -2259,13 +2253,13 @@ class BulkTagPlaybook(Resource):
             for t in tags:
                 tag = Tag.query.filter_by(name=t).first()
                 if not tag:
-                    tag = Tag(organization_uuid=current_user().organization_uuid, **{'name': t, 'color': '#fffff'})
+                    tag = Tag(organization_uuid=current_user.organization.uuid, **{'name': t, 'color': '#fffff'})
                     tag.create()
                     _tags += [tag]
                 else:
                     _tags += [tag]
 
-        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        playbook = Playbook.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if playbook:
             playbook.tags += _tags
             playbook.save()
@@ -2283,7 +2277,7 @@ class InputList(Resource):
     @user_has('view_inputs')
     def get(self, current_user):
         ''' Returns a list of inputs '''
-        return Input.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Input.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_input_create)
@@ -2321,9 +2315,9 @@ class InputList(Resource):
 
             if 'tags' in api.payload:
                 tags = api.payload.pop('tags')
-                _tags = parse_tags(tags, current_user().organization_uuid)
+                _tags = parse_tags(tags, current_user.organization.uuid)
 
-            inp = Input(organization_uuid=current_user().organization_uuid, **api.payload)
+            inp = Input(organization_uuid=current_user.organization.uuid, **api.payload)
             inp.create()
 
             if len(_tags) > 0:
@@ -2343,7 +2337,7 @@ class InputDetails(Resource):
     @user_has('view_inputs')
     def get(self, uuid, current_user):
         ''' Returns information about an input '''
-        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if inp:
             return inp
         else:
@@ -2355,7 +2349,7 @@ class InputDetails(Resource):
     @user_has('update_input')
     def put(self, uuid, current_user):
         ''' Updates information for an input '''
-        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if inp:
             if 'name' in api.payload and Input.query.filter_by(name=api.payload['name']).first():
                 ns_input.abort(409, 'Input name already exists.')
@@ -2369,7 +2363,7 @@ class InputDetails(Resource):
     @user_has('delete_input')
     def delete(self, uuid, current_user):
         ''' Deletes an input '''
-        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        inp = Input.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if inp:
             inp.delete()
             return {'message': 'Sucessfully deleted input.'}
@@ -2382,7 +2376,7 @@ class DownloadPlugin(Resource):
     @api.doc(security="Bearer")
     @token_required
     def get(self, path, current_user):
-        plugin_dir = os.path.join(current_app.config['PLUGIN_DIRECTORY'], current_user().organization_uuid)
+        plugin_dir = os.path.join(current_app.config['PLUGIN_DIRECTORY'], current_user.organization.uuid)
         return send_from_directory(plugin_dir, path, as_attachment=True)
 
 
@@ -2419,7 +2413,7 @@ class UploadPlugin(Resource):
                 filename = secure_filename(uploaded_file.filename)
                 
                 # Check to see if the organizations plugin directory exists
-                plugin_dir = os.path.join(current_app.config['PLUGIN_DIRECTORY'], current_user().organization_uuid)
+                plugin_dir = os.path.join(current_app.config['PLUGIN_DIRECTORY'], current_user.organization.uuid)
                 plugin_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), plugin_dir)
                 if not os.path.exists(plugin_dir):
                     os.makedirs(plugin_dir)
@@ -2474,7 +2468,7 @@ class UploadPlugin(Resource):
                                     logo=logo_b64,
                                     config_template=config_template,
                                     file_hash=hasher.hexdigest(),
-                                    organization_uuid=current_user().organization_uuid)
+                                    organization_uuid=current_user.organization.uuid)
                     plugin.create()
                     
                 plugins.append(plugin)
@@ -2490,7 +2484,7 @@ class PluginConfigList(Resource):
     @user_has('view_plugins')
     def get(self, current_user):
         ''' Returns a list of plugin_configs '''
-        return PluginConfig.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return PluginConfig.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_plugin_config_create)
@@ -2503,7 +2497,7 @@ class PluginConfigList(Resource):
         plugin_config = PluginConfig.query.filter_by(
             name=api.payload['name']).first()
         if not plugin_config:
-            plugin_config = PluginConfig(organization_uuid=current_user().organization_uuid, **api.payload)
+            plugin_config = PluginConfig(organization_uuid=current_user.organization.uuid, **api.payload)
             plugin_config.create()
         else:
             ns_plugin_config.abort(409, 'Plugin Config already exists.')
@@ -2521,7 +2515,7 @@ class PluginConfigDetails(Resource):
     @user_has('view_plugins')
     def get(self, uuid, current_user):
         ''' Returns information about a plugin_config '''
-        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin_config:
             return plugin_config
         else:
@@ -2534,7 +2528,7 @@ class PluginConfigDetails(Resource):
     @user_has('update_plugin')
     def put(self, uuid, current_user):
         ''' Updates information for a plugin_config '''
-        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin_config:
             if 'name' in api.payload and PluginConfig.query.filter_by(name=api.payload['name']).first():
                 ns_plugin_config.abort(
@@ -2550,7 +2544,7 @@ class PluginConfigDetails(Resource):
     @user_has('delete_plugin')
     def delete(self, current_user, uuid):
         ''' Deletes a plugin_config '''
-        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin_config = PluginConfig.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin_config:
             plugin_config.delete()
             return {'message': 'Sucessfully deleted plugin config.'}
@@ -2565,7 +2559,7 @@ class PluginList(Resource):
     @user_has('view_plugins')
     def get(self, current_user):
         ''' Returns a list of plugins '''
-        return Plugin.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Plugin.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_plugin_create)
@@ -2577,7 +2571,7 @@ class PluginList(Resource):
         ''' Creates a new plugin '''
         plugin = Plugin.query.filter_by(name=api.payload['name']).first()
         if not plugin:
-            plugin = Plugin(organization_uuid=current_user().organization_uuid, **api.payload)
+            plugin = Plugin(organization_uuid=current_user.organization.uuid, **api.payload)
             plugin.create()
         else:
             ns_plugin.abort(409, 'Plugin already exists.')
@@ -2595,7 +2589,7 @@ class PluginDetails(Resource):
     @user_has('view_plugins')
     def get(self, current_user, uuid):
         ''' Returns information about a plugin '''
-        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin:
             return plugin
         else:
@@ -2608,7 +2602,7 @@ class PluginDetails(Resource):
     @user_has('update_plugin')
     def put(self, current_user, uuid):
         ''' Updates information for a plugin '''
-        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin:
             if 'name' in api.payload and Plugin.query.filter_by(name=api.payload['name']).first():
                 ns_plugin.abort(409, 'Plugin name already exists.')
@@ -2623,7 +2617,7 @@ class PluginDetails(Resource):
     @user_has('delete_plugin')
     def delete(self, current_user, uuid):
         ''' Deletes a plugin '''
-        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        plugin = Plugin.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if plugin:
             plugin.delete()
             return {'message': 'Sucessfully deleted plugin.'}
@@ -2673,7 +2667,7 @@ class CreateBulkEvents(Resource):
             'results': [],
             'success': True
         }
-        event_status = EventStatus.query.filter_by(name="New", organization_uuid=current_user().organization_uuid).first()
+        event_status = EventStatus.query.filter_by(name="New", organization_uuid=current_user.organization.uuid).first()
 
         start_bulk_process_dt = datetime.datetime.utcnow().timestamp()
 
@@ -2685,18 +2679,18 @@ class CreateBulkEvents(Resource):
             _tags = []
             _observables = []
 
-            event = Event.query.filter_by(reference=item['reference'], organization_uuid=current_user().organization_uuid).first()
+            event = Event.query.filter_by(reference=item['reference'], organization_uuid=current_user.organization.uuid).first()
             if not event:
 
                 if 'tags' in item:
                     tags = item.pop('tags')
-                    _tags = parse_tags(tags, current_user().organization_uuid)
+                    _tags = parse_tags(tags, current_user.organization.uuid)
 
                 if 'observables' in item:
                     observables = item.pop('observables')
-                    _observables = create_observables(observables, current_user().organization_uuid)
+                    _observables = create_observables(observables, current_user.organization.uuid)
 
-                event = Event(organization_uuid=current_user().organization_uuid, **item)
+                event = Event(organization_uuid=current_user.organization.uuid, **item)
                 
                 event.create()
 
@@ -2713,7 +2707,7 @@ class CreateBulkEvents(Resource):
                 event.save()
 
                 # Process event rules against the new event
-                event_rules = EventRule.query.filter_by(organization_uuid=current_user().organization_uuid, event_signature=event.title, active=True).all()
+                event_rules = EventRule.query.filter_by(organization_uuid=current_user.organization.uuid, event_signature=event.title, active=True).all()
                 if event_rules:
                     for rule in event_rules:
                         # Kill switch for if the rule is about to run but the expiration is set
@@ -2724,10 +2718,9 @@ class CreateBulkEvents(Resource):
 
                         # Check to make sure the observables match what the analyst has assigned to the rule
                         # if not skip this item
-                        print(rule.hash_target_observables(event.observables))
                         if rule.hash_target_observables(event.observables) == rule.rule_signature:
                             if rule.merge_into_case:
-                                add_event_to_case(rule.target_case_uuid, event.uuid, current_user().organization_uuid)
+                                add_event_to_case(rule.target_case_uuid, event.uuid, current_user.organization.uuid)
                         else:
                             continue
 
@@ -2758,7 +2751,7 @@ event_list_parser.add_argument('signature', location='args', required=False)
 event_list_parser.add_argument('severity', action='split', location='args', required=False)
 event_list_parser.add_argument('grouped', type=xinputs.boolean, location='args', required=False)
 event_list_parser.add_argument('case_uuid', type=str, location='args', required=False)
-event_list_parser.add_argument('search', type=str, action='split', location='args', required=False)
+event_list_parser.add_argument('search', type=str, action='split', default=[], location='args', required=False)
 event_list_parser.add_argument('title', type=str, location='args', action='split', required=False)
 event_list_parser.add_argument('page', type=int, location='args', default=1, required=False)
 event_list_parser.add_argument('page_size', type=int, location='args', default=10, required=False)
@@ -2769,7 +2762,7 @@ event_list_parser.add_argument('sort_desc', type=xinputs.boolean, location='args
 class EventList(Resource):
 
     @api.doc(security="Bearer")
-    @api.marshal_with(mod_paged_event_list, as_list=True)
+    @api.marshal_with(mod_paged_event_list)
     @api.expect(event_list_parser)
     @token_required
     @user_has('view_events')
@@ -2783,7 +2776,7 @@ class EventList(Resource):
             'model':'Event',
             'field': 'organization_uuid',
             'op': 'eq',
-            'value': current_user().organization_uuid
+            'value': current_user.organization.uuid
         }]
 
         # Restrict what fields we can filter by
@@ -2819,7 +2812,11 @@ class EventList(Resource):
         if args['case_uuid']:
             filter_spec.append({'model':'Event', 'field':'case_uuid', 'op':'eq', 'value': args['case_uuid']})
 
-        if args['search'] and args['search'] != '':
+        # Filter out blank searches
+        if len(args['search']) > 0:
+            args['search'] = [s for s in args['search'] if s not in ['']]
+
+        if len(args['search']) > 0:
             searches = {
                 'or': []
             }
@@ -2827,10 +2824,9 @@ class EventList(Resource):
                 searches['or'].append({
                     'or': [
                         {'model':'Event', 'field':'title', 'op':'ilike', 'value':'%{}%'.format(s)},
+                        {'model':'Event', 'field':'description', 'op':'ilike', 'value':'%{}%'.format(s)},
                         {'model':'Event', 'field':'reference', 'op':'ilike', 'value':'%{}%'.format(s)},
-                        {'model':'Event', 'field':'signature', 'op':'ilike', 'value':'%{}%'.format(s)},
-                        {'model':'Observable', 'field':'value', 'op':'ilike', 'value':'%{}%'.format(s)},
-                        {'model':'Tag', 'field':'name', 'op':'ilike', 'value':'%{}%'.format(s)}
+                        {'model':'Event', 'field':'signature', 'op':'ilike', 'value':'%{}%'.format(s)}
                     ]
                 })
             filter_spec.append(searches)
@@ -2844,20 +2840,14 @@ class EventList(Resource):
 
         # Import our association tables, many-to-many doesn't have parent/child keys
         from .models import event_tag_association, observable_event_association
-        base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count'))
+        base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count')).options(joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason))
 
         if not args['grouped']:
-            base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count'))
+            base_query = db.session.query(Event,func.count(distinct(Event.uuid)).label('_related_events_count')).options(joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason))
 
         if args['signature']:
-            base_query = db.session.query(Event)
+            base_query = db.session.query(Event).options(joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason))
         
-        if args['search'] or (len(args['tags']) > 0 and not '' in args['tags']):
-            base_query = base_query.join(event_tag_association).join(Tag)
-            
-        if args['search'] or (len(args['observables']) > 0 and not '' in args['observables']):
-            base_query = base_query.join(observable_event_association).join(Observable)
-
         # Bidirectional sorting
         if args['sort_desc']:
             base_query = base_query.order_by(desc(getattr(Event,sort_by)))
@@ -2869,12 +2859,19 @@ class EventList(Resource):
             query = base_query.group_by(Event.signature)
             filtered_query = apply_filters(query, filter_spec)
             filtered_query, pagination = apply_pagination(filtered_query, page_number=args['page'], page_size=args['page_size'])
+
             results = filtered_query.all()
-            events = []
-            for result in results:
-                event = result[0]
-                event.__dict__['related_events_count'] = result[1]
-                events.append(event)
+            def count_related(e, c):
+                e.__dict__['related_events_count'] = c
+                return e
+
+            events = [count_related(r[0], r[1]) for r in results]
+            #events = []
+            #for result in results:
+            #    event = result[0]
+            #    event.__dict__['related_events_count'] = result[1]
+            #    events.append(event)
+            #events = results
 
             response = {
                 'events': events,
@@ -2943,19 +2940,19 @@ class EventList(Resource):
         event = Event.query.filter_by(
             reference=api.payload['reference']).first()
         if not event:
-            if 'tags' in api.payload:
+            if 'tags' in api.payload: 
                 tags = api.payload.pop('tags')
-                _tags = parse_tags(tags, current_user().organization_uuid)
+                _tags = parse_tags(tags, current_user.organization.uuid)
 
             if 'observables' in api.payload:
                 observables = api.payload.pop('observables')
-                _observables = create_observables(observables, current_user().organization_uuid)
+                _observables = create_observables(observables, current_user.organization.uuid)
 
-            event = Event(organization_uuid=current_user().organization_uuid, **api.payload)
+            event = Event(organization_uuid=current_user.organization.uuid, **api.payload)
             event.create()
 
             # Set the default status to New
-            event_status = EventStatus.query.filter_by(name="New", organization_uuid=current_user().organization_uuid).first()
+            event_status = EventStatus.query.filter_by(name="New", organization_uuid=current_user.organization.uuid).first()
             event.status = event_status
             event.save()
 
@@ -2974,9 +2971,6 @@ class EventList(Resource):
             ns_event.abort(409, 'Event already exists.')
 
 from app import cache
-
-
-
 
 test_parser = api.parser()
 test_parser.add_argument('limit', location='args', default=25, type=int, required=True)
@@ -3002,8 +2996,6 @@ class EventTestQuery(Resource):
 
         from sqlakeyset import get_page
 
-        start = datetime.datetime.utcnow().timestamp()
-
         # Parse the arguments
         args = test_parser.parse_args()
 
@@ -3023,13 +3015,13 @@ class EventTestQuery(Resource):
 
         # change the query if we are doing an event signature deep dive
         if args['signature'] and not args['signature'].startswith('!'):
-            base_query = db.session.query(Event)
+            base_query = db.session.query(Event).options(load_only(Event.id,Event.uuid,Event.title,Event.reference,Event.description,Event.tlp,Event.severity,Event.source,Event.created_at,Event.modified_at,Event.case_uuid,Event.signature), joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason))
         else:
-            base_query = db.session.query(Event, func.count(distinct(Event.uuid).label('related_events_count'))).group_by(Event.signature)
+            base_query = db.session.query(Event, func.count(distinct(Event.uuid).label('related_events_count'))).options(load_only(Event.id,Event.uuid,Event.title,Event.reference,Event.description,Event.tlp,Event.severity,Event.source,Event.created_at,Event.modified_at,Event.case_uuid,Event.signature), joinedload(Event.tags), joinedload(Event.status), joinedload(Event.observables), joinedload(Event.dismiss_reason)).group_by(Event.signature)
 
         # User filters
         user_filters = [
-            {'model':'Event','field':'organization_uuid','value':current_user().organization_uuid,'op':'eq'}
+            {'model':'Event','field':'organization_uuid','value':current_user.organization.uuid,'op':'eq'}
         ]
 
         base_query = apply_filters(base_query, user_filters)
@@ -3045,8 +3037,6 @@ class EventTestQuery(Resource):
         else:
             base_query = base_query.order_by(getattr(Event,args['sort_by']).desc(), Event.id)
 
-        query_end = datetime.datetime.utcnow().timestamp()
-        print("Query Time: {}".format(query_end - query_start))
         page = get_page(base_query, per_page=args['limit'], page=bookmark)
 
         if args['signature'] and not args['signature'].startswith('!'):
@@ -3066,10 +3056,7 @@ class EventTestQuery(Resource):
                 'next': next_bookmark,
                 'previous': prev_bookmark
             }
-        }        
-
-        end = datetime.datetime.utcnow().timestamp()
-        print("Request End: {}".format(end-start))
+        }
         
         return response
 
@@ -3088,7 +3075,7 @@ class EventBulkDelete(Resource):
 
         if 'events' in api.payload:
             for uuid in api.payload['events']:
-                event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+                event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
                 if event:
                     event.delete()
 
@@ -3105,28 +3092,56 @@ class EventBulkUpdate(Resource):
     @user_has('update_event')
     def put(self, current_user):
         ''' Dismisses multiple events at the same time with the same dismiss reason and comment '''
+        
+
+        # Get the dismissal reason if provided, if not abort, there needs to be one
+        if 'dismiss_reason_uuid' in api.payload:
+            event_status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, closed=True).first().uuid
+        else:
+            ns_event.abort(400, 'A dismissal reason is required.')
+
         _events = []
+
         if 'events' in api.payload:
-            for e in api.payload['events']:
-                event = Event.query.filter_by(uuid=e, organization_uuid=current_user().organization_uuid).first()
+
+            event_pks = [e.id for e in Event.query.filter(Event.uuid.in_(api.payload['events'])).options(load_only('id')).all()]
+            
+            for e in event_pks:
+                
+                _events.append({
+                    'id': e,
+                    'status_id': event_status,
+                    'dismiss_reason_uuid': api.payload['dismiss_reason_uuid'],
+                    'dismiss_comment': api.payload['dismiss_comment']
+                })            
+
+                if len(_events) > 100:
+                    db.session.bulk_update_mappings(Event, _events)
+                    db.session.flush()
+                    db.session.commit()
+                    _events.clear()
+
+            db.session.bulk_update_mappings(Event, _events)
+            db.session.commit()
+                
+            """
+                event = Event.query.filter_by(uuid=e, organization_uuid=current_user.organization.uuid).first()
                 if event:
                     # If the event has already closed/dismissed, don't update it again
                     if event.status.closed and ('dismiss_reason_uuid' in api.payload or 'dismiss_comment' in api.payload):
                         if event.close_reason:
                             api.payload.pop('dismiss_reason_uuid')
                             api.payload.pop('dismiss_comment')
-
-                    if 'dismiss_reason_uuid' in api.payload:
-                        event_status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, closed=True).first()
+                        
                         api.payload['status'] = event_status
 
                     # Update the event
                     event.update(api.payload)
 
                     # Add it to a list so we can return it back for display refresh
-                    _events.append(event)
+                    _events.append(event)"""
 
-        return _events
+        return []
 
 
 @ns_event.route("/<uuid>")
@@ -3140,7 +3155,7 @@ class EventDetails(Resource):
     @user_has('view_events')
     def get(self, current_user, uuid):
         ''' Returns information about a event '''
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             return event
         else:
@@ -3153,7 +3168,7 @@ class EventDetails(Resource):
     @user_has('update_event')
     def put(self, current_user, uuid):
         ''' Updates information for a event '''
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
 
             # If the event has already closed/dismissed, don't update it again
@@ -3163,11 +3178,11 @@ class EventDetails(Resource):
                     api.payload.pop('dismiss_comment')
 
             if 'dismiss_reason_uuid' in api.payload:
-                event_status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, closed=True).first()
+                event_status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, closed=True).first()
                 api.payload['status'] = event_status
 
             if 'status' in api.payload and api.payload['status'] == 0:
-                event_status = EventStatus.query.filter_by(organization_uuid=current_user().organization_uuid, closed=False, name='New').first()
+                event_status = EventStatus.query.filter_by(organization_uuid=current_user.organization.uuid, closed=False, name='New').first()
                 api.payload['status'] = event_status
 
             event.update(api.payload)
@@ -3180,7 +3195,7 @@ class EventDetails(Resource):
     @user_has('delete_event')
     def delete(self, current_user, uuid):
         ''' Deletes a event '''
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             event.delete()
             return {'message': 'Sucessfully deleted event.'}
@@ -3197,7 +3212,7 @@ class EventNewRelatedEvents(Resource):
     @user_has('view_events')
     def get(self, current_user, uuid):
         ''' Returns the UUIDs of all related events that are Open '''
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             query = db.session.query(Event)
             filter_spec = [
@@ -3224,7 +3239,7 @@ class EventRuleList(Resource):
     @user_has('view_event_rules')
     def get(self, current_user):
         ''' Gets a list of all the event rules '''
-        return EventRule.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return EventRule.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_event_rule_create)
@@ -3250,10 +3265,10 @@ class EventRuleList(Resource):
         # Create the observables
         if 'observables' in api.payload:
             observables = api.payload.pop('observables')
-            api.payload['observables'] = create_observables(observables, current_user().organization_uuid)
+            api.payload['observables'] = create_observables(observables, current_user.organization.uuid)
 
 
-        event_rule = EventRule(organization_uuid=current_user().organization_uuid, **api.payload)
+        event_rule = EventRule(organization_uuid=current_user.organization.uuid, **api.payload)
         event_rule.hash_observables()
         event_rule.create()
 
@@ -3269,7 +3284,7 @@ class EventRuleDetails(Resource):
     @user_has('view_event_rules')
     def get(self, uuid, current_user):
         ''' Gets a event rule '''
-        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event_rule:
             return event_rule
         else:
@@ -3282,7 +3297,7 @@ class EventRuleDetails(Resource):
     @user_has('update_event_rule')
     def put(self, uuid, current_user):
         ''' Updates the event rule '''
-        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event_rule:
             event_rule.update(api.payload)
             return event_rule
@@ -3294,7 +3309,7 @@ class EventRuleDetails(Resource):
     @user_has('delete_event_rule')
     def delete(self, uuid, current_user):
         ''' Removes an event rule '''
-        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event_rule = EventRule.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event_rule:
             event_rule.delete()
             return {'message': 'Sucessfully deleted the event rule.'}
@@ -3311,7 +3326,7 @@ class DeleteEventTag(Resource):
         tag = Tag.query.filter_by(name=name).first()
         if not tag:
             ns_event.abort(404, 'Tag not found.')
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             event.tags.remove(tag)
             event.save()
@@ -3330,10 +3345,10 @@ class TagEvent(Resource):
         ''' Adds a tag to an event '''
         tag = Tag.query.filter_by(name=name).first()
         if not tag:
-            tag = Tag(organization_uuid=current_user().organization_uuid, **{'name': name, 'color': '#fffff'})
+            tag = Tag(organization_uuid=current_user.organization.uuid, **{'name': name, 'color': '#fffff'})
             tag.create()
 
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             event.tags += [tag]
             event.save()
@@ -3357,13 +3372,13 @@ class BulkTagEvent(Resource):
             for t in tags:
                 tag = Tag.query.filter_by(name=t).first()
                 if not tag:
-                    tag = Tag(organization_uuid=current_user().organization_uuid, **{'name': t, 'color': '#fffff'})
+                    tag = Tag(organization_uuid=current_user.organization.uuid, **{'name': t, 'color': '#fffff'})
                     tag.create()
                     _tags += [tag]
                 else:
                     _tags += [tag]
 
-        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        event = Event.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if event:
             event.tags += _tags
             event.save()
@@ -3384,9 +3399,9 @@ class AgentPairToken(Resource):
         to get a long running JWT
         '''
 
-        settings = GlobalSettings.query.filter_by(organization_uuid=current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid=current_user.organization.uuid).first()
 
-        return generate_token(None, current_user().organization_uuid, settings.agent_pairing_token_valid_minutes, 'pairing')
+        return generate_token(None, current_user.organization.uuid, settings.agent_pairing_token_valid_minutes, 'pairing')
 
 
 @ns_agent.route("")
@@ -3398,7 +3413,7 @@ class AgentList(Resource):
     @user_has('view_agents')
     def get(self, current_user):
         ''' Returns a list of Agents '''
-        return Agent.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Agent.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_agent_create)
@@ -3452,7 +3467,7 @@ class AgentHeartbeat(Resource):
     @api.doc(security="Bearer")
     @token_required
     def get(self, uuid, current_user):
-        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent:
             agent.last_heartbeat = datetime.datetime.utcnow()
             agent.save()
@@ -3480,7 +3495,7 @@ class AgentDetails(Resource):
     @user_has('update_agent')
     def put(self, uuid, current_user):
         ''' Updates an Agent '''
-        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent:
             if 'inputs' in api.payload:
                 _inputs = []
@@ -3514,7 +3529,7 @@ class AgentDetails(Resource):
     @user_has('delete_agent')
     def delete(self, uuid, current_user):
         ''' Removes a Agent '''
-        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent:
             agent.delete()
             return {'message': 'Agent successfully delete.'}
@@ -3527,7 +3542,7 @@ class AgentDetails(Resource):
     @user_has('view_agents')
     def get(self, uuid, current_user):
         ''' Gets the details of a Agent '''
-        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent = Agent.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent:
             return agent
         else:
@@ -3549,9 +3564,9 @@ class UserGroupList(Resource):
         args = user_group_parser.parse_args()
 
         if args['name']:
-            groups = UserGroup.query.filter_by(UserGroup.name.like(args['name']+"%"), organization_uuid=current_user().organization_uuid).all()
+            groups = UserGroup.query.filter_by(UserGroup.name.like(args['name']+"%"), organization_uuid=current_user.organization.uuid).all()
         else:
-            groups = UserGroup.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+            groups = UserGroup.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
         return groups
 
@@ -3566,7 +3581,7 @@ class UserGroupList(Resource):
         user_group = UserGroup.query.filter_by(
             name=api.payload['name']).first()
         if not user_group:
-            user_group = UserGroup(organization_uuid=current_user().organization_uuid, **api.payload)
+            user_group = UserGroup(organization_uuid=current_user.organization.uuid, **api.payload)
             user_group.create()
             return {'message': 'Successfully created the User Group.'}
         else:
@@ -3584,7 +3599,7 @@ class UserGroupDetails(Resource):
     @user_has('view_user_groups')
     def get(self, uuid, current_user):
         ''' Gets details on a specific user_group '''
-        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user_group:
             return user_group
         else:
@@ -3598,12 +3613,12 @@ class UserGroupDetails(Resource):
     @user_has('update_user_groups')
     def put(self, uuid, current_user):
         ''' Updates a user_group '''
-        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
 
         if user_group:
-            # TODO: Improve the query function so that organization_uuid=current_user().organization_uuid is just natively
+            # TODO: Improve the query function so that organization_uuid=current_user.organization.uuid is just natively
             # called on all database calls
-            if 'name' in api.payload and UserGroup.query.filter_by(name=api.payload['name'], organization_uuid=current_user().organization_uuid).first():
+            if 'name' in api.payload and UserGroup.query.filter_by(name=api.payload['name'], organization_uuid=current_user.organization.uuid).first():
                 ns_user_group.abort(409, 'User Group name already exists.')
             else:
                 user_group.update(api.payload)
@@ -3617,7 +3632,7 @@ class UserGroupDetails(Resource):
     @user_has('delete_user_group')
     def delete(self, uuid, current_user):
         ''' Deletes a user_group '''
-        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        user_group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if user_group:
             user_group.delete()
             return {'message': 'Sucessfully deleted User Group.'}
@@ -3645,7 +3660,7 @@ class UpdateUserToGroup(Resource):
         if 'members' in api.payload:
             users = api.payload.pop('members')
             for user_uuid in users:
-                user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user().organization_uuid).first()
+                user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user.organization.uuid).first()
                 if user:
                     _users.append(user)
                     response['results'].append(
@@ -3655,7 +3670,7 @@ class UpdateUserToGroup(Resource):
                         {'reference': user_uuid, 'message': 'User not found.'})
                     response['success'] = False
 
-        group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        group = UserGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if group:
             group.members = _users
             group.save()
@@ -3679,7 +3694,7 @@ class AgentGroupList(Resource):
 
         args = agent_group_parser.parse_args()
 
-        base_query = db.session.query(AgentGroup).filter_by(organization_uuid=current_user().organization_uuid)
+        base_query = db.session.query(AgentGroup).filter_by(organization_uuid=current_user.organization.uuid)
         query, pagination = apply_pagination(base_query, page_number=args['page'], page_size=args['page_size'])
         response = {
             'groups': query.all(),
@@ -3692,7 +3707,7 @@ class AgentGroupList(Resource):
         }
         return response
 
-        return AgentGroup.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return AgentGroup.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_agent_group_create)
@@ -3706,7 +3721,7 @@ class AgentGroupList(Resource):
         agent_group = AgentGroup.query.filter_by(
             name=api.payload['name']).first()
         if not agent_group:
-            agent_group = AgentGroup(organization_uuid=current_user().organization_uuid, **api.payload)
+            agent_group = AgentGroup(organization_uuid=current_user.organization.uuid, **api.payload)
             agent_group.create()
             return agent_group
         else:
@@ -3725,7 +3740,7 @@ class AgentGroupDetails(Resource):
     @user_has('view_agent_groups')
     def get(self, uuid, current_user):
         ''' Gets details on a specific agent_group '''
-        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent_group:
             return agent_group
         else:
@@ -3739,7 +3754,7 @@ class AgentGroupDetails(Resource):
     @user_has('update_agent_group')
     def put(self, uuid, current_user):
         ''' Updates a agent_group '''
-        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
 
         if agent_group:
             exists = AgentGroup.query.filter_by(name=api.payload['name']).first()
@@ -3757,7 +3772,7 @@ class AgentGroupDetails(Resource):
     @user_has('delete_agent_group')
     def delete(self, uuid):
         ''' Deletes a agent_group '''
-        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        agent_group = AgentGroup.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if agent_group:
             agent_group.delete()
             return {'message': 'Sucessfully deleted Agent Group.'}
@@ -3772,7 +3787,7 @@ class RoleList(Resource):
     @user_has('view_roles')
     def get(self, current_user):
         ''' Returns a list of Roles '''
-        return Role.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Role.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_role_create)
@@ -3782,9 +3797,9 @@ class RoleList(Resource):
     @user_has('add_role')
     def post(self, current_user):
         ''' Creates a new Role '''
-        role = Role.query.filter_by(name=api.payload['name'], organization_uuid=current_user().organization_uuid).first()
+        role = Role.query.filter_by(name=api.payload['name'], organization_uuid=current_user.organization.uuid).first()
         if not role:
-            role = Role(organization_uuid=current_user().organization_uuid, **api.payload)
+            role = Role(organization_uuid=current_user.organization.uuid, **api.payload)
             role.create()
             return {'message': 'Successfully created the role.', 'uuid': role.uuid}
         else:
@@ -3800,9 +3815,9 @@ class RoleDetails(Resource):
     @user_has('update_role')
     def put(self, uuid, current_user):
         ''' Updates an Role '''
-        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if role:
-            if 'name' in api.payload and Role.query.filter_by(name=api.payload['name'], organization_uuid=current_user().organization_uuid).first():
+            if 'name' in api.payload and Role.query.filter_by(name=api.payload['name'], organization_uuid=current_user.organization.uuid).first():
                 ns_role.abort(409, 'Role with that name already exists.')
             else:
                 role.update(api.payload)
@@ -3815,7 +3830,7 @@ class RoleDetails(Resource):
     @user_has('delete_role')
     def delete(self, uuid, current_user):
         ''' Removes a Role '''
-        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if role:
             if len(role.users) > 0:
                 ns_role.abort(
@@ -3832,7 +3847,7 @@ class RoleDetails(Resource):
     @user_has('view_roles')
     def get(self, uuid, current_user):
         ''' Gets the details of a Role '''
-        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if role:
             return role
         else:
@@ -3848,7 +3863,7 @@ class ListList(Resource):
     @user_has('view_lists')
     def get(self, current_user):
         ''' Returns a list of Lists '''
-        return List.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return List.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_list_create)
@@ -3873,7 +3888,7 @@ class ListList(Resource):
             for value in _values:
                 if value == '':
                     continue
-                v = ListValue(value=value, organization_uuid=current_user().organization_uuid)
+                v = ListValue(value=value, organization_uuid=current_user.organization.uuid)
                 values.append(v)
 
             api.payload['values'] = values
@@ -3882,10 +3897,10 @@ class ListList(Resource):
         if not data_type:
             ns_list.abort(409, "Data type not found.")
 
-        value_list = List.query.filter_by(name=api.payload['name'], organization_uuid=current_user().organization_uuid).first()
+        value_list = List.query.filter_by(name=api.payload['name'], organization_uuid=current_user.organization.uuid).first()
 
         if not value_list:
-            value_list = List(organization_uuid=current_user().organization_uuid, **api.payload)
+            value_list = List(organization_uuid=current_user.organization.uuid, **api.payload)
             value_list.create()
             return value_list
         else:
@@ -3902,11 +3917,11 @@ class ListDetails(Resource):
     @user_has('update_list')
     def put(self, uuid, current_user):
         ''' Updates a List '''
-        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if value_list:
             
             if 'name' in api.payload:
-                l =  List.query.filter_by(name=api.payload['name'], organization_uuid=current_user().organization_uuid).first()
+                l =  List.query.filter_by(name=api.payload['name'], organization_uuid=current_user.organization.uuid).first()
                 if l and l.uuid != uuid:
                     ns_list.abort(409, 'List with that name already exists.')
                 else:
@@ -3929,11 +3944,11 @@ class ListDetails(Resource):
                         # delete them from the database and disassociate them 
                         # from the list
                         for v in removed_values:
-                            value = ListValue.query.filter_by(value=v, organization_uuid=current_user().organization_uuid, parent_list_uuid=value_list.uuid).first()
+                            value = ListValue.query.filter_by(value=v, organization_uuid=current_user.organization.uuid, parent_list_uuid=value_list.uuid).first()
                             value.delete()
 
                         for v in new_values:
-                            value = ListValue(value=v, organization_uuid=current_user().organization_uuid)
+                            value = ListValue(value=v, organization_uuid=current_user.organization.uuid)
                             value_list.values.append(value)
 
                     value_list.update(api.payload)
@@ -3946,7 +3961,7 @@ class ListDetails(Resource):
     @user_has('delete_list')
     def delete(self, uuid, current_user):
         ''' Removes a List '''
-        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if value_list:
             
             # Delete all the values so they aren't orphaned
@@ -3965,7 +3980,7 @@ class ListDetails(Resource):
     def get(self, uuid, current_user):
         ''' Gets the details of a List '''
 
-        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        value_list = List.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if value_list:
             return value_list
         else:
@@ -3984,9 +3999,9 @@ class AddUserToRole(Resource):
     @user_has('add_user_to_role')
     def put(self, uuid, user_uuid, current_user):
         ''' Adds a user to a specified Role '''
-        user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user.organization.uuid).first()
         if user:
-            role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+            role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
             if role:
                 user.role = role
                 user.save()
@@ -4008,11 +4023,11 @@ class RemoveUserFromRole(Resource):
     @user_has('remove_user_from_role')
     def put(self, uuid, user_uuid, current_user):
         ''' Removes a user to a specified Role '''
-        user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user().organization_uuid).first()
+        user = User.query.filter_by(uuid=user_uuid, organization_uuid=current_user.organization.uuid).first()
         if not user:
             ns_role.abort(404, 'User not found.')
 
-        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        role = Role.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if role:
             role.users = [u for u in role.users if u.uuid != user.uuid]
             role.save()
@@ -4034,9 +4049,9 @@ class EncryptPassword(Resource):
     def post(self, current_user):
         ''' Encrypts the password '''
         credential = Credential.query.filter_by(
-            name=api.payload['name'], organization_uuid=current_user().organization_uuid).first()
+            name=api.payload['name'], organization_uuid=current_user.organization.uuid).first()
         if not credential:
-            credential = Credential(organization_uuid=current_user().organization_uuid, **api.payload)
+            credential = Credential(organization_uuid=current_user.organization.uuid, **api.payload)
             credential.encrypt(api.payload['secret'].encode(
             ), current_app.config['MASTER_PASSWORD'])
             credential.create()
@@ -4053,7 +4068,7 @@ class CredentialList(Resource):
     @token_required
     @user_has('view_credentials')
     def get(self, current_user):
-        credentials = Credential.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        credentials = Credential.query.filter_by(organization_uuid=current_user.organization.uuid).all()
         if credentials:
             return credentials
         else:
@@ -4071,7 +4086,7 @@ class DecryptPassword(Resource):
     @user_has('decrypt_credential')
     def get(self, uuid, current_user):
         ''' Decrypts the credential for use '''
-        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if credential:
             value = credential.decrypt(current_app.config['MASTER_PASSWORD'])
             if value:
@@ -4092,7 +4107,7 @@ class DeletePassword(Resource):
     @user_has('view_credentials')
     def get(self, uuid, current_user):
         ''' Gets the full details of a credential '''
-        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if credential:
             return credential
         else:
@@ -4107,8 +4122,7 @@ class DeletePassword(Resource):
     @user_has('update_credential')
     def put(self, uuid, current_user):
         ''' Updates a credential '''
-        print(api.payload)
-        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if credential:
             cred = Credential.query.filter_by(name=api.payload['name']).first()
             if cred:
@@ -4132,7 +4146,7 @@ class DeletePassword(Resource):
     @user_has('delete_credential')
     def delete(self, uuid, current_user):
         ''' Deletes a credential '''
-        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        credential = Credential.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if credential:
             credential.delete()
             return {'message': 'Credential successfully deleted.'}
@@ -4160,7 +4174,7 @@ class TagList(Resource):
     @token_required
     def get(self, current_user):
         ''' Gets a list of tags '''
-        return Tag.query.filter_by(organization_uuid=current_user().organization_uuid).all()
+        return Tag.query.filter_by(organization_uuid=current_user.organization.uuid).all()
 
     @api.doc(security="Bearer")
     @api.expect(mod_tag)
@@ -4171,7 +4185,7 @@ class TagList(Resource):
         ''' Creates a new tag '''
         tag = Tag.query.filter_by(name=api.payload['name']).first()
         if not tag:
-            tag = Tag(organization_uuid=current_user().organization_uuid, **api.payload)
+            tag = Tag(organization_uuid=current_user.organization.uuid, **api.payload)
             tag.create()
             return {'message': 'Successfully created the tag.'}
         else:
@@ -4189,7 +4203,7 @@ class TagDetails(Resource):
     @token_required
     def get(self, uuid, current_user):
         ''' Gets details on a specific tag '''
-        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if tag:
             return tag
         else:
@@ -4202,7 +4216,7 @@ class TagDetails(Resource):
     @token_required
     def put(self, uuid, current_user):
         ''' Updates a tag '''
-        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if tag:
             if 'name' in api.payload and Tag.query.filter_by(name=api.payload['name']).first():
                 ns_tag.abort(409, 'Tag name already exists.')
@@ -4217,7 +4231,7 @@ class TagDetails(Resource):
     @token_required
     def delete(self, uuid, current_user):
         ''' Deletes a tag '''
-        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user().organization_uuid).first()
+        tag = Tag.query.filter_by(uuid=uuid, organization_uuid=current_user.organization.uuid).first()
         if tag:
             tag.delete()
             return {'message': 'Sucessfully deleted tag.'}
@@ -4232,7 +4246,7 @@ class Settings(Resource):
     @user_has('view_settings')    
     def get(self, current_user):
         ''' Retrieves the global settings for the system '''
-        settings = GlobalSettings.query.filter_by(organization_uuid=current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid=current_user.organization.uuid).first()
         return settings
 
     @api.doc(security="Bearer")
@@ -4245,7 +4259,7 @@ class Settings(Resource):
             if int(api.payload['agent_pairing_token_valid_minutes']) > 365:
                 ns_settings.abort(400, 'agent_pairing_token_valid_minutes can not be greated than 365 days.')
 
-        settings = GlobalSettings.query.filter_by(organization_uuid=current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid=current_user.organization.uuid).first()
         settings.update(api.payload)
 
         return {'message': 'Succesfully updated settings'}
@@ -4260,7 +4274,7 @@ class PersistentPairingToken(Resource):
     @user_has('create_persistent_pairing_token')
     def get(self, current_user):
         ''' Returns a new API key for the user making the request '''
-        settings = GlobalSettings.query.filter_by(organization_uuid = current_user().organization_uuid).first()
+        settings = GlobalSettings.query.filter_by(organization_uuid = current_user.organization.uuid).first()
         return settings.generate_persistent_pairing_token()
 
 
@@ -4270,8 +4284,7 @@ class CaseTrend(Resource):
     @api.doc(security="Bearer")
     @token_required
     def get(self, current_user):
-        cases = Case.query.filter_by(organization_uuid=current_user().organization_uuid).group_by(func.strftime('%Y-%m-%d', Case.created_at)).all()
-        print(cases)
+        cases = Case.query.filter_by(organization_uuid=current_user.organization.uuid).group_by(func.strftime('%Y-%m-%d', Case.created_at)).all()
         return {}
 
 
