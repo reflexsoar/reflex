@@ -1,10 +1,6 @@
-# reflex
-Reflex SOAR
+# ReflexSOAR
 
-# Quickstart for CentOS/Ubuntu
+# NOTE: This repository is meant only to direct users
 
-To install Reflex on a CentOS or Ubuntu system, run the below command.
-
-```bash
-wget -O - https://raw.githubusercontent.com/reflexsoar/reflex/master/bootstrap.sh | sudo bash
-```
+- Refer to https://github.com/reflexsoar/reflex-api for Issue reporting
+- Refer to https://docs.reflexsoar.com for Documentation
